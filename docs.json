@@ -84,6 +84,7 @@
             "group": "Core Modules",
             "pages": [
               "api/run-alphafold",
+              "api/build-data",
               "api/folding-input",
               "api/model",
               "api/pipeline"

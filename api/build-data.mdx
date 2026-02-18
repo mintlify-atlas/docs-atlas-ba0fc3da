@@ -1,0 +1,60 @@
+---
+title: 'build_data'
+description: 'Data preparation command for AlphaFold 3'
+---
+
+## Overview
+
+The `build_data` command builds intermediate data files required by AlphaFold 3. This is a command-line utility exposed via the package's entry points.
+
+## Usage
+
+```bash
+build_data
+```
+
+This command is automatically available after installing the `alphafold3` package. It prepares chemical component data by converting the Chemical Component Dictionary (CCD) into optimized formats for AlphaFold 3.
+
+## What It Does
+
+The `build_data` command:
+
+1. **Locates the CCD file** - Finds `components.cif` from libcifpp installation
+2. **Generates pickle files** - Creates optimized binary representations of chemical components
+3. **Builds component sets** - Organizes chemical components into categorized sets
+
+## Output
+
+The command generates the following files in the `alphafold3.constants.converters` package directory:
+
+- **Chemical component pickle** - Binary representation of CCD data
+- **Component sets** - Organized groupings of chemical components
+
+## When To Use
+
+You typically don't need to run this command manually, as the necessary data files are included with the package distribution. However, you may need to run it if:
+
+- Rebuilding AlphaFold 3 from source
+- Updating chemical component definitions
+- Debugging chemical component issues
+
+## Requirements
+
+- The `libcifpp` library must be installed and contain `components.cif`
+- Write permissions to the package installation directory
+
+## Example
+
+```bash
+# Run data preparation
+build_data
+
+# Typically run after package installation or updates
+pip install alphafold3
+build_data
+```
+
+## Related
+
+- [Chemical Components](/api/constants/chemical-components) - Using chemical component data
+- [Installation](/installation) - Installing AlphaFold 3
