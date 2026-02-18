@@ -1,0 +1,155 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "AlphaFold 3",
+  "projectDescription": "Accurate structure prediction of biomolecular interactions using deep learning.",
+  "theme": "palm",
+  "primaryColor": "#1976D2",
+  "lightColor": "#42A5F5",
+  "darkColor": "#0D47A1",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart",
+              "obtaining-model-parameters"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/overview",
+              "concepts/inference-pipeline",
+              "concepts/data-pipeline",
+              "concepts/model-architecture"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/input-format",
+              "guides/json-specification",
+              "guides/output-format",
+              "guides/confidence-metrics",
+              "guides/running-docker",
+              "guides/running-singularity",
+              "guides/performance-optimization",
+              "guides/database-setup"
+            ]
+          },
+          {
+            "group": "Advanced Usage",
+            "pages": [
+              "advanced/custom-msa",
+              "advanced/custom-templates",
+              "advanced/ligands-and-modifications",
+              "advanced/covalent-bonds",
+              "advanced/pipeline-stages",
+              "advanced/batch-processing"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/known-issues",
+              "resources/troubleshooting",
+              "resources/faq",
+              "resources/community-tools",
+              "resources/citation"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/run-alphafold",
+              "api/folding-input",
+              "api/model",
+              "api/pipeline"
+            ]
+          },
+          {
+            "group": "Data Processing",
+            "pages": [
+              "api/data/featurisation",
+              "api/data/msa",
+              "api/data/templates"
+            ]
+          },
+          {
+            "group": "Model Components",
+            "pages": [
+              "api/model/inference",
+              "api/model/features",
+              "api/model/post-processing"
+            ]
+          },
+          {
+            "group": "Structure",
+            "pages": [
+              "api/structure/structure",
+              "api/structure/mmcif"
+            ]
+          },
+          {
+            "group": "Constants & Utilities",
+            "pages": [
+              "api/constants/chemical-components",
+              "api/constants/residue-names",
+              "api/common/resources"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Terms of Use",
+        "groups": [
+          {
+            "group": "Legal",
+            "pages": [
+              "legal/source-code-license",
+              "legal/model-parameters-terms",
+              "legal/prohibited-use-policy",
+              "legal/output-terms"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Protein structure prediction with high accuracy",
+    "Prediction of biomolecular complexes (protein-protein, protein-ligand, protein-nucleic acid)",
+    "Support for RNA and DNA structure prediction",
+    "Custom ligand specification via SMILES and CCD codes",
+    "Custom MSA and template support",
+    "Covalent bond specification between entities",
+    "Confidence metrics (pLDDT, PAE, pTM, ipTM)",
+    "GPU-accelerated inference with JAX",
+    "Docker and Singularity container support",
+    "Batch processing capabilities"
+  ],
+  "publicApiSurface": [
+    "run_alphafold.py - Main inference script",
+    "build_data - Data preparation command",
+    "alphafold3.common.folding_input.Input - Input dataclass for structure prediction",
+    "alphafold3.model.model.Model - Core AlphaFold 3 model",
+    "alphafold3.model.model.InferenceResult - Model output dataclass",
+    "alphafold3.data.pipeline.DataPipeline - MSA and template search pipeline",
+    "alphafold3.data.pipeline.DataPipelineConfig - Configuration for data pipeline",
+    "alphafold3.structure.Structure - Structure representation class",
+    "alphafold3.model.features - Feature processing utilities",
+    "alphafold3.data.featurisation - Input featurisation functions",
+    "alphafold3.common.folding_input.Template - Structural template class",
+    "alphafold3.parsers - mmCIF parsing utilities"
+  ]
+}
