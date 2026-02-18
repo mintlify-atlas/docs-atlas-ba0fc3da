@@ -1,0 +1,314 @@
+---
+title: 'Output Format'
+description: 'Understanding AlphaFold 3 output structure and files'
+icon: 'folder-open'
+---
+
+## Output Directory Structure
+
+AlphaFold 3 creates an organized directory structure for each job. The directory name is the sanitized version of your job name.
+
+<Note>
+For job name "My first fold (TEST)", outputs are written to `My_first_fold_TEST`. If the directory exists, a timestamp is appended unless `--force_output_dir` is used.
+</Note>
+
+### Example Directory Layout
+
+For a job named "Hello Fold" with 1 seed and 5 samples:
+
+```text
+hello_fold/
+├── seed-1234_distogram/                        # If --save_distogram=true
+│   └── hello_fold_seed-1234_distogram.npz
+├── seed-1234_embeddings/                       # If --save_embeddings=true
+│   └── hello_fold_seed-1234_embeddings.npz
+├── seed-1234_sample-0/
+│   ├── hello_fold_seed-1234_sample-0_confidences.json
+│   ├── hello_fold_seed-1234_sample-0_model.cif
+│   └── hello_fold_seed-1234_sample-0_summary_confidences.json
+├── seed-1234_sample-1/
+│   ├── hello_fold_seed-1234_sample-1_confidences.json
+│   ├── hello_fold_seed-1234_sample-1_model.cif
+│   └── hello_fold_seed-1234_sample-1_summary_confidences.json
+├── seed-1234_sample-2/
+│   ├── hello_fold_seed-1234_sample-2_confidences.json
+│   ├── hello_fold_seed-1234_sample-2_model.cif
+│   └── hello_fold_seed-1234_sample-2_summary_confidences.json
+├── seed-1234_sample-3/
+│   ├── hello_fold_seed-1234_sample-3_confidences.json
+│   ├── hello_fold_seed-1234_sample-3_model.cif
+│   └── hello_fold_seed-1234_sample-3_summary_confidences.json
+├── seed-1234_sample-4/
+│   ├── hello_fold_seed-1234_sample-4_confidences.json
+│   ├── hello_fold_seed-1234_sample-4_model.cif
+│   └── hello_fold_seed-1234_sample-4_summary_confidences.json
+├── TERMS_OF_USE.md
+├── hello_fold_confidences.json
+├── hello_fold_data.json
+├── hello_fold_model.cif
+├── hello_fold_ranking_scores.csv
+└── hello_fold_summary_confidences.json
+```
+
+## Output Files
+
+### Top-Level Files
+
+<CardGroup cols={2}>
+  <Card title="model.cif" icon="cube">
+    **Top-ranked prediction structure**
+    
+    mmCIF format compatible with structural biology tools. No PDB format provided (convert CIF if needed).
+  </Card>
+  
+  <Card title="confidences.json" icon="chart-line">
+    **Detailed confidence metrics**
+    
+    Full 1D/2D arrays of pLDDT, PAE, and contact probabilities for top prediction.
+  </Card>
+  
+  <Card title="summary_confidences.json" icon="list-check">
+    **Summary confidence scores**
+    
+    Scalar metrics like pTM, ipTM, ranking scores for top prediction.
+  </Card>
+  
+  <Card title="data.json" icon="database">
+    **Input with MSA/templates**
+    
+    Original input JSON augmented with MSA and template data from pipeline.
+  </Card>
+</CardGroup>
+
+<ParamField path="ranking_scores.csv" type="file">
+  CSV file ranking all predictions. Highest ranking prediction is included in root directory.
+</ParamField>
+
+<ParamField path="TERMS_OF_USE.md" type="file">
+  License and usage terms for AlphaFold 3 outputs
+</ParamField>
+
+### Per-Sample Subdirectories
+
+For each seed and sample combination (`seed-<seed>_sample-<n>`), three files are generated:
+
+<Steps>
+  <Step title="Structure File">
+    `<job>_seed-<seed>_sample-<n>_model.cif` - Predicted structure in mmCIF format
+  </Step>
+  <Step title="Detailed Confidences">
+    `<job>_seed-<seed>_sample-<n>_confidences.json` - Full confidence arrays
+  </Step>
+  <Step title="Summary Confidences">
+    `<job>_seed-<seed>_sample-<n>_summary_confidences.json` - Scalar metrics
+  </Step>
+</Steps>
+
+### Optional Output Files
+
+<Tabs>
+  <Tab title="Distogram">
+    **Enabled with**: `--save_distogram=true`
+    
+    **Location**: `seed-<seed>_distogram/distogram.npz`
+    
+    NumPy zip file containing distance predictions:
+    - **Key**: `distogram`
+    - **Shape**: `(num_tokens, num_tokens, 64)`
+    - **Dtype**: `np.float16`
+    - **Size**: ~3 GiB for 5,000 tokens
+  </Tab>
+  
+  <Tab title="Embeddings">
+    **Enabled with**: `--save_embeddings=true`
+    
+    **Location**: `seed-<seed>_embeddings/embeddings.npz`
+    
+    NumPy zip file with two keys:
+    - **single_embeddings**: `(num_tokens, 384)`, `np.float16`
+    - **pair_embeddings**: `(num_tokens, num_tokens, 128)`, `np.float16`
+    - **Size**: ~6 GiB for 5,000 tokens
+    
+    ```python
+    import numpy as np
+    
+    with open('embeddings.npz', 'rb') as f:
+        embeddings = np.load(f)
+        single = embeddings['single_embeddings']
+        pair = embeddings['pair_embeddings']
+    ```
+  </Tab>
+</Tabs>
+
+## Multi-Seed and Multi-Sample Results
+
+<Note>
+By default, AlphaFold 3 generates **5 samples per seed**. The top-ranked prediction across all samples and seeds is placed in the root directory.
+</Note>
+
+### Ranking Predictions
+
+For ranking the full complex, use the `ranking_score` (higher is better):
+
+```text
+ranking_score = 0.8 × ipTM + 0.2 × pTM + 0.5 × disorder - 100 × has_clash
+```
+
+This score includes:
+- **Structure confidence** (pTM and ipTM)
+- **Disorder penalty** for spurious helices
+- **Clash penalty** for atomic conflicts
+
+<Warning>
+The `ranking_score` is designed for ranking only. Use pTM, ipTM, PAE, or pLDDT for quality assessment.
+</Warning>
+
+### Chain-Specific Ranking
+
+If interested in specific entities or interactions, rank by:
+
+- **`chain_ptm`**: Confidence in individual chain structure
+- **`chain_iptm`**: Confidence in chain interfaces with all other chains
+- **`chain_pair_iptm`**: Confidence in specific two-chain interfaces
+- **`chain_pair_pae_min`**: Minimum PAE between chain pairs (correlates with binding)
+
+## Confidence JSON Files
+
+Two JSON files provide confidence metrics for each prediction:
+
+### Summary Confidences JSON
+
+Scalar and per-chain/per-chain-pair metrics:
+
+<ParamField path="ptm" type="number">
+  Predicted TM-score for full structure (0-1). Values &gt;0.5 indicate correct overall fold.
+</ParamField>
+
+<ParamField path="iptm" type="number">
+  Interface predicted TM-score (0-1). Values &gt;0.8 = high quality, &lt;0.6 = likely failed, 0.6-0.8 = uncertain.
+</ParamField>
+
+<ParamField path="fraction_disordered" type="number">
+  Fraction of structure that is disordered (0-1), measured by accessible surface area.
+</ParamField>
+
+<ParamField path="has_clash" type="boolean">
+  True if &gt;50% of a chain has clashes, or &gt;100 clashing atoms in any chain.
+</ParamField>
+
+<ParamField path="ranking_score" type="number">
+  Composite score for ranking predictions (-100 to 1.5).
+</ParamField>
+
+<ParamField path="chain_ptm" type="array<number>">
+  Per-chain pTM scores. Element `i` is pTM restricted to chain `i`.
+</ParamField>
+
+<ParamField path="chain_iptm" type="array<number>">
+  Per-chain interface confidence. Average ipTM between each chain and all others.
+</ParamField>
+
+<ParamField path="chain_pair_iptm" type="array<array<number>>">
+  `[num_chains, num_chains]` matrix. Off-diagonal `(i,j)` = ipTM for chains i-j interface. Diagonal `(i,i)` = pTM for chain i.
+</ParamField>
+
+<ParamField path="chain_pair_pae_min" type="array<array<number>>">
+  `[num_chains, num_chains]` matrix. Element `(i,j)` = minimum PAE from chain i to chain j. Correlates with binding interactions.
+</ParamField>
+
+### Full Confidences JSON
+
+Detailed per-atom and per-token arrays:
+
+<ParamField path="atom_plddts" type="array<number>">
+  `[num_atoms]` array of per-atom predicted lDDT scores (0-100). Higher = more confident.
+</ParamField>
+
+<ParamField path="pae" type="array<array<number>>">
+  `[num_tokens, num_tokens]` matrix. Element `(i,j)` = predicted error in position of token j when aligned using token i's frame.
+</ParamField>
+
+<ParamField path="contact_probs" type="array<array<number>>">
+  `[num_tokens, num_tokens]` matrix. Element `(i,j)` = probability tokens i and j are within 8Å.
+</ParamField>
+
+<ParamField path="token_chain_ids" type="array<string>">
+  `[num_tokens]` array mapping tokens to chain IDs.
+</ParamField>
+
+<ParamField path="atom_chain_ids" type="array<string>">
+  `[num_atoms]` array mapping atoms to chain IDs.
+</ParamField>
+
+## mmCIF Structure Files
+
+The `.cif` files contain predicted 3D coordinates in the standard mmCIF format.
+
+<Note>
+AlphaFold 3 does not output PDB format. Use standard tools to convert mmCIF to PDB if needed:
+</Note>
+
+```bash
+# Using PyMOL
+pymol -c -d "load model.cif; save model.pdb"
+
+# Using gemmi
+gemmi convert model.cif model.pdb
+```
+
+### Viewing Structures
+
+Compatible with most structural biology tools:
+- **PyMOL**: `pymol model.cif`
+- **ChimeraX**: `chimerax model.cif`
+- **VMD**: `vmd model.cif`
+- **Mol***: Web-based viewer at https://molstar.org
+
+## Data JSON File
+
+The `<job>_data.json` file contains your original input augmented with:
+- MSAs generated by genetic search
+- Structural templates found by template search
+- Other data pipeline outputs
+
+<Note>
+This file can be reused as input with `--norun_data_pipeline` to skip expensive genetic searches.
+</Note>
+
+## Chirality Checks
+
+For ligand predictions, chirality errors can be assessed using the provided utility:
+
+```python
+from alphafold3.model.scoring.chirality import compare_chirality
+
+# Compare predicted structure chirality against CCD reference
+result = compare_chirality(predicted_mol, reference_mol)
+```
+
+<Warning>
+In the AlphaFold 3 paper, a chirality penalty was applied to ranking scores for ligands. Running multiple seeds with chiral-aware ranking greatly reduces error rates.
+</Warning>
+
+## File Sizes
+
+Typical file sizes for a 5,000-token prediction:
+
+| File Type | Approximate Size |
+|-----------|------------------|
+| mmCIF structure | 5-20 MB |
+| Confidence JSON | 200-500 MB |
+| Summary JSON | 1-10 KB |
+| Distogram (optional) | ~3 GB |
+| Embeddings (optional) | ~6 GB |
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Confidence Metrics" icon="chart-line" href="/guides/confidence-metrics">
+    Deep dive into pLDDT, PAE, pTM, and ipTM
+  </Card>
+  <Card title="Input Format" icon="file-code" href="/guides/input-format">
+    Learn how to create input JSON files
+  </Card>
+</CardGroup>

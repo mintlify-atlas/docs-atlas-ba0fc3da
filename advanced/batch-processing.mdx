@@ -1,0 +1,553 @@
+---
+title: Batch Processing Multiple Inputs
+description: Learn how to efficiently process multiple AlphaFold 3 predictions using batch processing and optimization techniques
+---
+
+# Batch Processing Multiple Inputs
+
+AlphaFold 3 supports efficient batch processing of multiple predictions through directory-based input, MSA reuse, and database sharding. This guide covers strategies for high-throughput structure prediction.
+
+## Basic Batch Processing
+
+### Processing Multiple Input Files
+
+Instead of processing a single JSON file, you can provide a directory containing multiple input files:
+
+```bash
+python run_alphafold.py \
+  --input_dir=inputs/ \
+  --output_dir=outputs/
+```
+
+### Input Directory Structure
+
+```bash
+inputs/
+├── protein_1.json
+├── protein_2.json
+├── protein_3.json
+├── complex_1.json
+└── complex_2.json
+```
+
+AlphaFold 3 will process each JSON file sequentially.
+
+<Info>
+All JSON files in the input directory must be valid AlphaFold 3 input files following the `alphafold3` dialect.
+</Info>
+
+## Efficient MSA Reuse
+
+For large-scale experiments, compute MSAs once and reuse them across multiple predictions.
+
+### Strategy 1: Fixed Chains with Varying Partners
+
+When folding multiple candidates with fixed chains:
+
+<Steps>
+
+<Step title="Compute MSAs for Fixed Chains">
+Run data pipeline once for chains that don't change:
+
+```bash
+python run_alphafold.py \
+  --json_path=fixed_chains.json \
+  --output_dir=fixed_msas \
+  --norun_inference
+```
+</Step>
+
+<Step title="Create Multimer Inputs">
+For each multimer, populate fixed chain data from pre-computed MSAs:
+
+```json
+{
+  "name": "multimer_1",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "...",
+        "unpairedMsa": "<from fixed_chains output>",
+        "pairedMsa": "<from fixed_chains output>",
+        "templates": []
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "..."
+        // Let pipeline compute MSA for varying chain
+      }
+    }
+  ],
+  "modelSeeds": [42],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+</Step>
+
+<Step title="Run Full Pipeline">
+The pipeline will compute MSAs only for chains without pre-computed data:
+
+```bash
+for input in multimer_*.json; do
+  python run_alphafold.py \
+    --json_path=$input \
+    --output_dir=results/
+done
+```
+</Step>
+
+</Steps>
+
+### Strategy 2: All Pairwise Combinations
+
+For *n* × *m* combinatorial experiments:
+
+<Tabs>
+  <Tab title="Step 1: Compute Individual MSAs">
+  Process each chain individually:
+
+  ```bash
+  # Create monomer inputs
+  for chain in A B C D; do
+    cat > chain_${chain}.json <<EOF
+  {
+    "name": "chain_${chain}",
+    "sequences": [{"protein": {"id": "${chain}", "sequence": "..."}}],
+    "modelSeeds": [1],
+    "dialect": "alphafold3",
+    "version": 4
+  }
+  EOF
+  done
+
+  # Compute MSAs
+  for chain in A B C D; do
+    python run_alphafold.py \
+      --json_path=chain_${chain}.json \
+      --output_dir=monomer_msas \
+      --norun_inference
+  done
+  ```
+  </Tab>
+
+  <Tab title="Step 2: Generate Dimer Inputs">
+  Create all pairwise combinations:
+
+  ```python
+  import json
+  import itertools
+
+  chains = ['A', 'B', 'C', 'D']
+  monomer_outputs = {}
+
+  # Load pre-computed MSAs
+  for chain in chains:
+      with open(f'monomer_msas/fold_chain_{chain}_input.json') as f:
+          monomer_outputs[chain] = json.load(f)
+
+  # Generate all dimers
+  for chain1, chain2 in itertools.combinations(chains, 2):
+      dimer = {
+          "name": f"dimer_{chain1}{chain2}",
+          "sequences": [
+              monomer_outputs[chain1]['sequences'][0],
+              monomer_outputs[chain2]['sequences'][0]
+          ],
+          "modelSeeds": [42],
+          "dialect": "alphafold3",
+          "version": 4
+      }
+      
+      with open(f'dimers/dimer_{chain1}{chain2}.json', 'w') as f:
+          json.dump(dimer, f, indent=2)
+  ```
+  </Tab>
+
+  <Tab title="Step 3: Run Inference Only">
+  Process all dimers with inference only:
+
+  ```bash
+  python run_alphafold.py \
+    --input_dir=dimers/ \
+    --output_dir=dimer_results \
+    --norun_data_pipeline
+  ```
+
+  Or parallelize across multiple GPUs:
+
+  ```bash
+  # Split dimers across GPUs
+  ls dimers/*.json | split -n l/4 - dimer_batch_
+
+  # Run on GPU 0
+  for f in $(cat dimer_batch_aa); do
+    CUDA_VISIBLE_DEVICES=0 python run_alphafold.py \
+      --json_path=$f \
+      --output_dir=results_gpu0 \
+      --norun_data_pipeline &
+  done
+
+  # Run on GPU 1-3 similarly...
+  ```
+  </Tab>
+</Tabs>
+
+### Efficiency Gains
+
+<Info>
+**Example: 10 chains × 10 chains**
+
+**Without MSA reuse:**
+- 100 full runs (data pipeline + inference)
+- ~100 hours on single machine
+
+**With MSA reuse:**
+- 20 data pipeline runs
+- 100 inference-only runs
+- ~30 hours total (70% time savings)
+
+**With MSA reuse + parallelization (4 GPUs):**
+- ~10 hours total (90% time savings)
+</Info>
+
+## Database Sharding
+
+For maximum throughput on multi-core systems, shard genetic databases to parallelize searches.
+
+### What is Database Sharding?
+
+Split large sequence databases into multiple smaller files (shards) that can be searched in parallel.
+
+<Steps>
+
+<Step title="Shuffle Sequences">
+Randomize sequence order for balanced shards:
+
+```bash
+seqkit shuffle --two-pass uniprot.fasta > uniprot_shuffled.fasta
+```
+</Step>
+
+<Step title="Split into Shards">
+Divide into equal parts:
+
+```bash
+# Split into 64 shards
+seqkit split2 --by-part 64 uniprot_shuffled.fasta
+
+# Rename to AlphaFold format
+mv uniprot_shuffled.part_001.fasta uniprot.fasta-00000-of-00064
+mv uniprot_shuffled.part_002.fasta uniprot.fasta-00001-of-00064
+# ... and so on
+```
+</Step>
+
+<Step title="Calculate Database Statistics">
+For correct e-value scaling:
+
+```bash
+# For protein databases (count sequences)
+grep -c '^>' uniprot.fasta
+# Output: 225619586
+
+# For RNA databases (count nucleotides)
+seqkit stats -T rnacentral.fasta | awk '{print $5}'
+# Output: 13271.415730
+```
+</Step>
+
+</Steps>
+
+### Sharding Naming Convention
+
+Shards must follow this pattern:
+```
+<prefix>-<shard_index>-of-<total_shards>
+```
+
+Where:
+- `shard_index`: 5 digits, 0-padded, starts at 00000
+- `total_shards`: 5 digits, 0-padded
+
+**Examples:**
+- `uniprot.fasta-00000-of-00064`
+- `uniprot.fasta-00063-of-00064`
+- `bfd.fasta-00000-of-00256`
+
+**File spec format:** `<prefix>@<total_shards>`
+- Example: `uniprot.fasta@64`
+
+### Using Sharded Databases
+
+```bash
+python run_alphafold.py \
+  --json_path=input.json \
+  --small_bfd_database_path="bfd.fasta@64" \
+  --small_bfd_z_value=65984053 \
+  --mgnify_database_path="mgy_clusters.fa@512" \
+  --mgnify_z_value=623796864 \
+  --uniprot_cluster_annot_database_path="uniprot_cluster.fasta@256" \
+  --uniprot_cluster_annot_z_value=225619586 \
+  --uniref90_database_path="uniref90.fasta@128" \
+  --uniref90_z_value=153742194 \
+  --ntrna_database_path="nt_rna.fasta@256" \
+  --ntrna_z_value=76752.808514 \
+  --rfam_database_path="rfam.fasta@16" \
+  --rfam_z_value=138.115553 \
+  --rna_central_database_path="rnacentral.fasta@64" \
+  --rna_central_z_value=13271.415730 \
+  --jackhmmer_n_cpu=2 \
+  --jackhmmer_max_parallel_shards=16 \
+  --nhmmer_n_cpu=2 \
+  --nhmmer_max_parallel_shards=16
+```
+
+### Calculating Parallelization
+
+For protein chains:
+```
+total_cpu_cores = jackhmmer_n_cpu × jackhmmer_max_parallel_shards × 4 databases
+                = 2 × 16 × 4
+                = 128 cores
+```
+
+For RNA chains:
+```
+total_cpu_cores = nhmmer_n_cpu × nhmmer_max_parallel_shards × 3 databases
+                = 2 × 16 × 3
+                = 96 cores
+```
+
+<Warning>
+Ensure your machine has sufficient cores and memory bandwidth. Over-parallelization can slow down performance.
+</Warning>
+
+### Shard Size Guidelines
+
+<Info>
+Aim for **consistent shard sizes** across databases:
+
+- If database A is 3× smaller than database B
+- And database B has 48 shards
+- Then database A should have 48 ÷ 3 = 16 shards
+
+This ensures balanced work distribution.
+</Info>
+
+## Multiple Random Seeds
+
+Generate multiple predictions with different random seeds:
+
+```json
+{
+  "name": "my_protein",
+  "modelSeeds": [1, 2, 3, 4, 5],
+  "sequences": [...],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+AlphaFold 3 will run inference once for each seed, producing *n* structures.
+
+### Batch Seeds Processing
+
+For large-scale seed ensembles:
+
+```bash
+# Generate inputs with different seeds
+for seed in {1..50}; do
+  jq ".modelSeeds = [$seed]" base_input.json > inputs/input_seed_${seed}.json
+done
+
+# Process all
+python run_alphafold.py \
+  --input_dir=inputs/ \
+  --output_dir=seed_ensemble/
+```
+
+## Parallel Processing Strategies
+
+### Strategy 1: Multiple Processes
+
+```bash
+#!/bin/bash
+# Process files in parallel (4 at a time)
+ls inputs/*.json | xargs -n 1 -P 4 -I {} bash -c '
+  python run_alphafold.py \
+    --json_path={} \
+    --output_dir=outputs/
+'
+```
+
+### Strategy 2: Multiple GPUs
+
+```bash
+#!/bin/bash
+# Distribute across 4 GPUs
+files=(inputs/*.json)
+total=${#files[@]}
+per_gpu=$((total / 4))
+
+for gpu in 0 1 2 3; do
+  start=$((gpu * per_gpu))
+  end=$((start + per_gpu))
+  
+  for i in $(seq $start $((end - 1))); do
+    CUDA_VISIBLE_DEVICES=$gpu python run_alphafold.py \
+      --json_path=${files[$i]} \
+      --output_dir=outputs_gpu${gpu}/ &
+  done
+done
+
+wait
+```
+
+### Strategy 3: HPC Cluster (SLURM)
+
+```bash
+#!/bin/bash
+#SBATCH --array=1-100
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:1
+#SBATCH --mem=64G
+
+# Get input file for this array task
+input_file=$(ls inputs/*.json | sed -n "${SLURM_ARRAY_TASK_ID}p")
+
+python run_alphafold.py \
+  --json_path=$input_file \
+  --output_dir=$SCRATCH/alphafold_outputs/
+```
+
+Submit:
+```bash
+sbatch batch_process.sh
+```
+
+## Performance Optimization
+
+### Compilation Cache
+
+Reduce recompilation time by enabling persistent cache:
+
+```bash
+export JAX_COMPILATION_CACHE_DIR=/fast_storage/jax_cache
+
+python run_alphafold.py \
+  --json_path=input.json \
+  --jax_compilation_cache_dir=/fast_storage/jax_cache
+```
+
+<Info>
+After the first compilation, subsequent runs with similar token counts will reuse cached compilations, saving 10-30 minutes per run.
+</Info>
+
+### Bucket Configuration
+
+Optimize bucket sizes for your input distribution:
+
+```bash
+# Default buckets
+python run_alphafold.py \
+  --json_path=input.json \
+  --buckets 256,512,768,1024,1280,1536,2048,2560,3072,3584,4096,4608,5120
+
+# Custom buckets for larger inputs
+python run_alphafold.py \
+  --json_path=input.json \
+  --buckets 256,512,1024,2048,3072,4096,5120,6144,7168,8192
+```
+
+### Memory Optimization
+
+For large batches on limited GPU memory:
+
+```bash
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+
+python run_alphafold.py \
+  --json_path=input.json
+```
+
+## Complete Batch Processing Example
+
+```bash
+#!/bin/bash
+set -e
+
+# Step 1: Compute MSAs for all monomers
+echo "Computing MSAs for monomers..."
+for chain in A B C D E F G H I J; do
+  python run_alphafold.py \
+    --json_path=monomers/chain_${chain}.json \
+    --output_dir=monomer_msas \
+    --norun_inference
+done
+
+# Step 2: Generate all dimer combinations
+echo "Generating dimer inputs..."
+python generate_dimers.py \
+  --monomer_dir=monomer_msas \
+  --output_dir=dimer_inputs
+
+# Step 3: Run inference on all dimers (parallel, 4 GPUs)
+echo "Running dimer predictions..."
+python run_alphafold.py \
+  --input_dir=dimer_inputs \
+  --output_dir=dimer_results \
+  --norun_data_pipeline \
+  --jax_compilation_cache_dir=/fast_storage/jax_cache
+
+echo "Batch processing complete!"
+```
+
+## Monitoring and Logging
+
+Track progress of batch jobs:
+
+```bash
+# Count completed predictions
+find outputs/ -name "*.cif" | wc -l
+
+# Check for errors
+find outputs/ -name "*.log" -exec grep -l "ERROR" {} \;
+
+# Monitor GPU usage
+watch -n 1 nvidia-smi
+
+# Monitor disk I/O
+iotop -o
+```
+
+## References
+
+From `performance.md:27-61`:
+```markdown
+### Pre-computing and reusing MSA and templates
+
+When folding multiple candidate chains with a set of fixed chains,
+you can optimize the process by computing the MSA and templates for
+the fixed chains only once.
+
+This technique can also be extended to efficiently process all
+combinations of n first chains and m second chains. Instead of
+performing n × m full computations, you can reduce this to n + m
+data pipeline runs.
+```
+
+From `input.md:5-10`:
+```markdown
+## Specifying Input Files
+
+You can provide inputs to `run_alphafold.py` in one of two ways:
+
+- Single input file: Use the `--json_path` flag
+- Multiple input files: Use the `--input_dir` flag
+```

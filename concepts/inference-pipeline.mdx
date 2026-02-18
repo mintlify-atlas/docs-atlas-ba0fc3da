@@ -1,0 +1,509 @@
+---
+title: "Inference Pipeline"
+description: "Detailed walkthrough of the AlphaFold 3 inference pipeline from input to structure output"
+---
+
+## Pipeline Overview
+
+The AlphaFold 3 inference pipeline transforms processed features into predicted 3D structures through a multi-stage neural network. This page details the complete flow from feature tensors to final structure outputs.
+
+## Pipeline Stages
+
+<Steps>
+  <Step title="Feature Preparation">
+    Convert data pipeline outputs into model-compatible tensor formats
+  </Step>
+  
+  <Step title="Network Forward Pass">
+    Process features through Evoformer, Pairformer, and Diffusion modules
+  </Step>
+  
+  <Step title="Structure Generation">
+    Sample atomic coordinates via reverse diffusion process
+  </Step>
+  
+  <Step title="Confidence Computation">
+    Calculate quality metrics for the predicted structure
+  </Step>
+  
+  <Step title="Post-Processing">
+    Convert model outputs to standard structure formats
+  </Step>
+</Steps>
+
+## Entry Point
+
+The main inference entry point is `run_alphafold.py`, which orchestrates the entire prediction workflow:
+
+```python
+# From run_alphafold.py:85-94
+_RUN_DATA_PIPELINE = flags.DEFINE_bool(
+    'run_data_pipeline',
+    True,
+    'Whether to run the data pipeline on the fold inputs.',
+)
+_RUN_INFERENCE = flags.DEFINE_bool(
+    'run_inference',
+    True,
+    'Whether to run inference on the fold inputs.',
+)
+```
+
+<Note>
+Both stages can be run independently. The data pipeline produces a `*_data.json` file that contains all features needed for inference, enabling GPU-free data processing and GPU-only inference on separate machines.
+</Note>
+
+## Stage 1: Feature Preparation
+
+### Input Format
+
+Features are processed from the data pipeline output (or custom inputs) into a structured `Batch` object:
+
+```python
+# From src/alphafold3/model/feat_batch.py
+@dataclasses.dataclass(frozen=True)
+class Batch:
+    token_features: features.TokenFeatures    # Per-token features
+    msa: features.MSAFeatures                 # MSA features
+    templates: features.TemplateFeatures      # Template features
+    atom_features: features.AtomFeatures      # Per-atom features
+    # ... additional fields
+```
+
+### Token Features
+
+Tokens are the fundamental unit in AlphaFold 3. Each token represents:
+- A single residue for proteins/nucleic acids
+- An entire ligand molecule
+
+Key token features include:
+- **Residue/ligand type encoding**
+- **Chain ID information**
+- **Token index** (position in sequence)
+- **Chemical properties**
+
+Implementation: `src/alphafold3/model/features.py`
+
+### MSA Features
+
+Multiple Sequence Alignments provide evolutionary information:
+
+```python
+# Processed MSA representation
+- sequences: [num_msa, num_tokens] int array
+- deletion_matrix: Gap information
+- paired/unpaired MSA: For multimer pairing
+```
+
+<Info>
+MSA depth is limited to 1024 sequences (configurable). Sequences are clustered and subsampled to maintain diversity while fitting memory constraints.
+</Info>
+
+### Template Features
+
+Structural templates from PDB provide spatial priors:
+
+- **Template coordinates**: Aligned structures
+- **Template sequence alignment**: Mapping query to template
+- **Template metadata**: Resolution, date, identity scores
+
+Implementation: `src/alphafold3/data/templates.py`
+
+## Stage 2: Network Forward Pass
+
+### 2.1 Input Embedding
+
+The network begins by creating initial embeddings:
+
+```python
+# From src/alphafold3/model/model.py:143
+def create_target_feat_embedding(
+    batch: feat_batch.Batch,
+    config: evoformer_network.Evoformer.Config,
+    global_config: model_config.GlobalConfig,
+) -> jnp.ndarray:
+    """Create target feature embedding."""
+    # Embed token features into seq_channel dimensions (384)
+```
+
+Features are projected into:
+- **Single representation**: `[num_tokens, 384]` - per-token features
+- **Pair representation**: `[num_tokens, num_tokens, 128]` - pairwise relationships
+
+### 2.2 Evoformer Trunk
+
+The Evoformer processes MSA and template information:
+
+```python
+# From src/alphafold3/model/network/evoformer.py:30
+class Evoformer(hk.Module):
+    """Creates 'single' and 'pair' embeddings."""
+```
+
+**Key operations**:
+
+<Accordion title="MSA Processing">
+Processes multiple sequence alignments through attention and transformation layers:
+- Row attention (per-sequence)
+- Column attention (per-position)
+- Transition layers (feed-forward networks)
+- Outer product mean (MSA → pair updates)
+
+This extracts evolutionary patterns and co-evolution signals.
+</Accordion>
+
+<Accordion title="Template Integration">
+Incorporates structural template information:
+- Template pair features computed from template coordinates
+- Template point attention to integrate spatial information
+- Template angle features for backbone geometry
+
+Implementation: `src/alphafold3/model/network/template_modules.py`
+</Accordion>
+
+<Accordion title="Relative Positional Encoding">
+Adds positional information to pair representations:
+
+```python
+# From src/alphafold3/model/network/evoformer.py:77
+def _relative_encoding(
+    self, batch: feat_batch.Batch, pair_activations: jnp.ndarray
+) -> jnp.ndarray:
+    """Add relative position encodings."""
+    rel_feat = featurization.create_relative_encoding(
+        seq_features=batch.token_features,
+        max_relative_idx=self.config.max_relative_idx,  # 32
+        max_relative_chain=self.config.max_relative_chain,  # 2
+    )
+```
+
+Encodes relative positions and chain separations.
+</Accordion>
+
+### 2.3 Pairformer Module
+
+After Evoformer, the Pairformer refines representations:
+
+```python
+# Configuration from src/alphafold3/model/network/evoformer.py:37
+class Config:
+    pairformer: PairformerConfig = base_config.autocreate(
+        num_layer=48,  # 48 Pairformer blocks
+    )
+```
+
+**Pairformer operations** (48 layers):
+- Triangle multiplicative updates
+- Triangle self-attention
+- Single representation updates with attention
+- Per-token transition blocks
+
+<Info>
+The Pairformer is the deepest part of the network with 48 blocks. It performs sophisticated reasoning about pairwise token relationships and refines the single representation through cross-attention.
+</Info>
+
+### 2.4 Diffusion Module
+
+The diffusion head generates 3D atomic coordinates:
+
+```python
+# From src/alphafold3/model/network/diffusion_head.py:30
+SIGMA_DATA = 16.0  # Carefully measured from training data
+```
+
+**Diffusion Process**:
+
+<Steps>
+  <Step title="Initialize Noisy Coordinates">
+    Start with coordinates sampled from a high-noise distribution
+  </Step>
+  
+  <Step title="Iterative Denoising">
+    Apply learned denoising steps guided by the diffusion transformer
+  </Step>
+  
+  <Step title="Condition on Context">
+    Use single and pair representations to guide coordinate updates
+  </Step>
+  
+  <Step title="Sample Multiple Structures">
+    Generate multiple diverse predictions (default: 5 samples per seed)
+  </Step>
+</Steps>
+
+#### Noise Schedule
+
+```python
+# From src/alphafold3/model/network/diffusion_head.py:79
+def noise_schedule(t, smin=0.0004, smax=160.0, p=7):
+    return (
+        SIGMA_DATA
+        * (smax ** (1 / p) + t * (smin ** (1 / p) - smax ** (1 / p))) ** p
+    )
+```
+
+The noise schedule determines how much noise is added at each diffusion timestep, gradually decreasing from `smax=160.0` Å to `smin=0.0004` Å.
+
+#### Diffusion Transformer
+
+The diffusion transformer is conditioned on:
+- **Single representations** (token-level context)
+- **Pair representations** (pairwise relationships)
+- **Noise level embeddings** (current diffusion timestep)
+
+It predicts coordinate updates to denoise the structure:
+
+```python
+# Conceptual diffusion update
+x_denoised = x_noisy + diffusion_transformer(
+    x_noisy, 
+    single_repr, 
+    pair_repr, 
+    noise_level
+)
+```
+
+Implementation: `src/alphafold3/model/network/diffusion_transformer.py`
+
+### 2.5 Confidence Head
+
+In parallel with structure generation, confidence metrics are computed:
+
+```python
+# From src/alphafold3/model/network/confidence_head.py
+class ConfidenceHead(hk.Module):
+    """Predicts confidence metrics from representations."""
+```
+
+**Predicted metrics**:
+- **pLDDT**: Per-atom local distance confidence
+- **PAE**: Predicted aligned error matrix
+- **Contact probabilities**: Likelihood of token-token contacts
+
+Implementation: `src/alphafold3/model/network/confidence_head.py`
+
+## Stage 3: Structure Generation
+
+### Coordinate Conversion
+
+Model outputs are in a token-atom layout that must be converted to the final flat output format:
+
+```python
+# From src/alphafold3/model/model.py:70
+def get_predicted_structure(
+    result: ModelResult, batch: feat_batch.Batch
+) -> structure.Structure:
+    """Creates the predicted structure."""
+    
+    model_output_coords = result['diffusion_samples']['atom_positions']
+    
+    # Rearrange model output coordinates to flat output layout
+    model_output_to_flat = atom_layout.compute_gather_idxs(
+        source_layout=batch.convert_model_output.token_atoms_layout,
+        target_layout=batch.convert_model_output.flat_output_layout,
+    )
+    pred_flat_atom_coords = atom_layout.convert(
+        gather_info=model_output_to_flat,
+        arr=model_output_coords,
+        layout_axes=(-3, -2),
+    )
+```
+
+This handles:
+- Unpacking ligand atoms from token representations
+- Ordering atoms according to mmCIF conventions
+- Handling missing atoms (set to 0, 0, 0)
+
+### Multiple Samples
+
+The diffusion process generates multiple samples per seed:
+
+```python
+# From src/alphafold3/model/network/diffusion_head.py:92
+class SampleConfig:
+    steps: int                      # Number of diffusion steps
+    num_samples: int = 1            # Samples per seed (default: 5)
+    gamma_0: float = 0.8
+    gamma_min: float = 1.0
+    noise_scale: float = 1.003
+    step_scale: float = 1.5
+```
+
+<Note>
+Multiple samples provide diversity in predictions. The best sample is selected based on the ranking score, which combines confidence metrics with clash and disorder penalties.
+</Note>
+
+## Stage 4: Confidence Computation
+
+After structure generation, comprehensive confidence metrics are computed:
+
+### pLDDT (per-atom)
+
+```python
+# From src/alphafold3/model/confidences.py
+predicted_lddt = result.get('predicted_lddt')
+# Shape: [num_atoms] with values 0-100
+```
+
+Higher values indicate higher local confidence. pLDDT predicts a modified LDDT score considering only distances to polymers.
+
+### PAE (Predicted Aligned Error)
+
+```python
+# Shape: [num_tokens, num_tokens]
+# Element (i,j) = predicted error in position of token j 
+#                 when aligned on frame of token i
+```
+
+Lower values indicate higher confidence in relative positions.
+
+### Aggregate Metrics
+
+Computed from per-token/per-atom confidences:
+
+- **pTM**: Predicted TM-score for full structure (0-1, higher = better)
+- **ipTM**: Interface pTM for multi-chain interactions
+- **chain_pair_pae_min**: Minimum PAE between chain pairs
+- **ranking_score**: Combined metric for ranking predictions
+
+```python
+# From src/alphafold3/model/confidences.py
+ranking_score = 0.8 * ipTM + 0.2 * pTM + 0.5 * disorder - 100 * has_clash
+```
+
+## Stage 5: Post-Processing
+
+### Structure Output
+
+Predicted structures are written in mmCIF format:
+
+```python
+# From src/alphafold3/model/model.py:129
+pred_struc = batch.convert_model_output.empty_output_struc
+pred_struc = pred_struc.copy_and_update_atoms(
+    atom_x=pred_flat_atom_coords[..., 0],
+    atom_y=pred_flat_atom_coords[..., 1],
+    atom_z=pred_flat_atom_coords[..., 2],
+    atom_b_factor=pred_flat_b_factors,  # pLDDT values
+    atom_occupancy=np.ones(...),        # Always 1.0
+)
+```
+
+**Output files per sample**:
+- `<job>_seed-<seed>_sample-<n>_model.cif`: Structure in mmCIF format
+- `<job>_seed-<seed>_sample-<n>_confidences.json`: Full confidence arrays
+- `<job>_seed-<seed>_sample-<n>_summary_confidences.json`: Scalar metrics
+
+### Ranking and Selection
+
+All samples across all seeds are ranked by `ranking_score`:
+
+1. Best prediction is copied to root output directory
+2. Ranking CSV file lists all predictions with scores
+3. Users can select different samples based on specific metrics (e.g., highest chain-specific confidence)
+
+### Optional Outputs
+
+<Accordion title="Embeddings">
+Token and pair embeddings can be saved with `--save_embeddings=true`:
+
+```python
+# embeddings.npz contains:
+# - single_embeddings: [num_tokens, 384]
+# - pair_embeddings: [num_tokens, num_tokens, 128]
+```
+
+Useful for downstream machine learning tasks or analysis.
+</Accordion>
+
+<Accordion title="Distograms">
+Distance distributions can be saved with `--save_distogram=true`:
+
+```python
+# distogram.npz contains:
+# - distogram: [num_tokens, num_tokens, 64]
+#   64 distance bins representing predicted distance distributions
+```
+
+Large files (~3 GB for 5000 tokens).
+</Accordion>
+
+## Performance Optimization
+
+### Memory Management
+
+The inference pipeline employs several memory optimization strategies:
+
+1. **Gradient checkpointing**: Recomputes activations during backward pass
+2. **Block remat**: Rematerialization of Pairformer blocks
+3. **bfloat16 precision**: Reduces memory by 2× with minimal accuracy loss
+
+### Batching
+
+AlphaFold 3 processes one structure at a time. For multiple predictions:
+
+```bash
+# Multiple seeds in single JSON
+{"modelSeeds": [1, 2, 3, 4, 5]}
+
+# Or multiple JSON files
+python run_alphafold.py --input_dir=/path/to/jsons/
+```
+
+### GPU Requirements
+
+<Info>
+**Minimum**: 24GB GPU (e.g., RTX 3090, A5000)
+**Recommended**: 40GB+ GPU (e.g., A100) for large complexes
+
+Memory scales with:
+- Number of tokens (~quadratic for pair representations)
+- Number of atoms
+- Number of diffusion steps
+</Info>
+
+## Error Handling
+
+Common issues and diagnostics:
+
+<Accordion title="Out of Memory">
+Solutions:
+- Reduce MSA depth: `--num_msa=512`
+- Use smaller templates
+- Split very large complexes
+- Enable lower precision: `--bfloat16=true`
+</Accordion>
+
+<Accordion title="Missing Atoms">
+When atoms cannot be placed (e.g., unsupported ligand atoms), coordinates are set to (0,0,0):
+
+```python
+# From src/alphafold3/model/model.py:107
+if missing_atoms_indices.shape[0] > 0:
+    logging.warning(
+        'Target %s: warning: %s atoms were not predicted'
+    )
+```
+
+Check logs for missing atom warnings.
+</Accordion>
+
+<Accordion title="Low Confidence">
+If confidence metrics are low:
+- Check MSA depth and quality
+- Verify template relevance
+- Consider multiple seeds for diversity
+- Inspect PAE for specific interaction confidence
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Pipeline" icon="database" href="/concepts/data-pipeline">
+    Learn how features are prepared before inference
+  </Card>
+  
+  <Card title="Model Architecture" icon="brain" href="/concepts/model-architecture">
+    Deep dive into network components
+  </Card>
+</CardGroup>

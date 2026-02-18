@@ -1,0 +1,505 @@
+---
+title: Specifying Ligands and Modifications
+description: Learn how to specify ligands using CCD codes, SMILES strings, and custom chemical components in AlphaFold 3
+---
+
+# Specifying Ligands and Modifications
+
+AlphaFold 3 supports modeling ligands, ions, and modified residues using multiple formats. This guide covers all three methods for specifying small molecules and modifications.
+
+## Overview
+
+Ligands can be specified using three approaches:
+
+1. **CCD Codes** - Use standard Chemical Component Dictionary codes (easiest)
+2. **SMILES Strings** - Define custom ligands not in the CCD
+3. **User-Provided CCD** - Define custom ligands with full control (most flexible)
+
+## Method 1: CCD Codes
+
+<Info>
+AlphaFold 3 uses the CCD from **2022-09-28**. Standard codes like `ATP`, `HEM`, `NAD`, etc. are supported.
+</Info>
+
+### Single Component Ligands
+
+```json
+{
+  "ligand": {
+    "id": "L",
+    "ccdCodes": ["ATP"],
+    "description": "Adenosine triphosphate"
+  }
+}
+```
+
+### Multiple Copies
+
+Specify multiple IDs for the same ligand:
+
+```json
+{
+  "ligand": {
+    "id": ["L", "M", "N"],
+    "ccdCodes": ["ATP"],
+    "description": "Three copies of ATP"
+  }
+}
+```
+
+### Multi-Component Ligands (Glycans)
+
+For ligands composed of multiple chemical components:
+
+```json
+{
+  "ligand": {
+    "id": "G",
+    "ccdCodes": ["NAG", "FUC", "GAL"],
+    "description": "Glycan with three components"
+  }
+}
+```
+
+<Warning>
+For multi-component ligands, you **must define bonds** between components using the `bondedAtomPairs` field (see [Covalent Bonds](/advanced/covalent-bonds)).
+</Warning>
+
+### Ions
+
+Ions are treated as ligands:
+
+<Tabs>
+  <Tab title="Magnesium Ion">
+  ```json
+  {
+    "ligand": {
+      "id": "I",
+      "ccdCodes": ["MG"]
+    }
+  }
+  ```
+  </Tab>
+
+  <Tab title="Calcium Ion">
+  ```json
+  {
+    "ligand": {
+      "id": "J",
+      "ccdCodes": ["CA"]
+    }
+  }
+  ```
+  </Tab>
+
+  <Tab title="Zinc Ion">
+  ```json
+  {
+    "ligand": {
+      "id": "K",
+      "ccdCodes": ["ZN"]
+    }
+  }
+  ```
+  </Tab>
+</Tabs>
+
+## Method 2: SMILES Strings
+
+Use SMILES to define ligands not present in the CCD.
+
+### Basic SMILES Ligand
+
+```json
+{
+  "ligand": {
+    "id": "L",
+    "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+    "description": "Custom ligand defined by SMILES"
+  }
+}
+```
+
+### SMILES JSON Escaping
+
+<Warning>
+Backslashes in SMILES strings **must be escaped** as double backslashes (`\\`) in JSON, otherwise parsing will fail.
+</Warning>
+
+<CodeGroup>
+
+```json Correct (Escaped)
+{
+  "ligand": {
+    "id": "L",
+    "smiles": "CCC[C@@H](O)CC\\C=C\\C=C\\C#CC#C\\C=C\\CO"
+  }
+}
+```
+
+```json Incorrect (Will Fail)
+{
+  "ligand": {
+    "id": "L",
+    "smiles": "CCC[C@@H](O)CC\C=C\C=C\C#CC#C\C=C\CO"
+  }
+}
+```
+
+</CodeGroup>
+
+### Escaping SMILES Strings
+
+<Tabs>
+  <Tab title="Using jq">
+  ```bash
+  jq -R . <<< 'CCC[C@@H](O)CC\C=C\C=C\C#CC#C\C=C\CO'
+  ```
+  Output: `"CCC[C@@H](O)CC\\C=C\\C=C\\C#CC#C\\C=C\\CO"`
+  </Tab>
+
+  <Tab title="Using Python">
+  ```python
+  import json
+
+  smiles = r'CCC[C@@H](O)CC\C=C\C=C\C#CC#C\C=C\CO'
+  print(json.dumps(smiles))
+  ```
+  Output: `"CCC[C@@H](O)CC\\C=C\\C=C\\C#CC#C\\C=C\\CO"`
+  </Tab>
+</Tabs>
+
+### SMILES Limitations
+
+<Warning>
+SMILES-defined ligands **cannot be used in bonds** because SMILES doesn't provide unique atom names. If you need to define bonds to a custom ligand, use the User-Provided CCD method instead.
+</Warning>
+
+### RDKit Conformer Generation
+
+AlphaFold 3 uses RDKit to generate 3D conformers from SMILES. If generation fails:
+
+```bash
+python run_alphafold.py \
+  --json_path=input.json \
+  --conformer_max_iterations=10000
+```
+
+Alternatively, provide a reference structure using User-Provided CCD.
+
+## Method 3: User-Provided CCD
+
+Define custom ligands in CCD mmCIF format for maximum control.
+
+### When to Use User-Provided CCD
+
+<Steps>
+
+<Step title="Bonded Custom Ligands">
+When you need to define bonds between a custom ligand and other entities (SMILES can't do this).
+</Step>
+
+<Step title="Multi-Component Glycans">
+When defining complex glycans that need to be bonded together.
+</Step>
+
+<Step title="Reference Coordinates">
+When RDKit fails to generate conformers and you want to provide ideal coordinates.
+</Step>
+
+<Step title="Custom Bond Orders">
+When you need precise control over atom names, bond orders, and charges.
+</Step>
+
+</Steps>
+
+### Basic User CCD Structure
+
+```json
+{
+  "name": "Custom ligand example",
+  "sequences": [
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["MY-LIG-1"]
+      }
+    }
+  ],
+  "userCCD": "data_MY-LIG-1\n_chem_comp.id MY-LIG-1\n..."
+}
+```
+
+<Info>
+**Naming Convention:**
+- Use custom names that don't clash with standard CCD codes
+- Avoid underscores (`_`) in names (can cause mmCIF format issues)
+- Example: `MY-LIG-1`, `CUSTOM-MOL-42`, `LIGAND-X7F`
+</Info>
+
+### User CCD via External File
+
+Instead of inline, reference an external file:
+
+```json
+{
+  "name": "Custom ligand from file",
+  "sequences": [
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["MY-LIG-1"]
+      }
+    }
+  ],
+  "userCCDPath": "custom_ccd/my_ligand.cif"
+}
+```
+
+<Info>
+Supported formats:
+- Plain text (`.cif`)
+- gzip (`.cif.gz`)
+- xz (`.cif.xz`)
+- zstd (`.cif.zst`)
+
+Paths can be absolute or relative to the input JSON.
+</Info>
+
+<Warning>
+`userCCD` and `userCCDPath` are **mutually exclusive**. Use one or the other, not both.
+</Warning>
+
+### User CCD Format
+
+Here's a complete example redefining component X7F:
+
+```cif
+data_MY-X7F
+#
+_chem_comp.id MY-X7F
+_chem_comp.name '5,8-bis(oxidanyl)naphthalene-1,4-dione'
+_chem_comp.type non-polymer
+_chem_comp.formula 'C10 H6 O4'
+_chem_comp.mon_nstd_parent_comp_id ?
+_chem_comp.pdbx_synonyms ?
+_chem_comp.formula_weight 190.152
+#
+loop_
+_chem_comp_atom.comp_id
+_chem_comp_atom.atom_id
+_chem_comp_atom.type_symbol
+_chem_comp_atom.charge
+_chem_comp_atom.pdbx_leaving_atom_flag
+_chem_comp_atom.pdbx_model_Cartn_x_ideal
+_chem_comp_atom.pdbx_model_Cartn_y_ideal
+_chem_comp_atom.pdbx_model_Cartn_z_ideal
+MY-X7F C02 C 0 N -1.418 -1.260 0.018
+MY-X7F C03 C 0 N -0.665 -2.503 -0.247
+MY-X7F O01 O 0 N -2.611 -1.301 0.247
+MY-X7F H1  H 0 N -1.199 -3.419 -0.452
+#
+loop_
+_chem_comp_bond.atom_id_1
+_chem_comp_bond.atom_id_2
+_chem_comp_bond.value_order
+_chem_comp_bond.pdbx_aromatic_flag
+O01 C02 DOUB N
+C02 C03 SING N
+C03 H1  SING N
+#
+```
+
+### Required Fields
+
+<Tabs>
+  <Tab title="Singular Fields">
+  These fields contain single values:
+
+  - `_chem_comp.id` - Component ID (must match `data_` record)
+  - `_chem_comp.name` - Full name (or `?` if unknown)
+  - `_chem_comp.type` - Type (typically `non-polymer`)
+  - `_chem_comp.formula` - Chemical formula (or `?`)
+  - `_chem_comp.mon_nstd_parent_comp_id` - Parent ID (or `?`)
+  - `_chem_comp.pdbx_synonyms` - Synonyms (or `?`)
+  - `_chem_comp.formula_weight` - Weight (or `?`)
+  </Tab>
+
+  <Tab title="Per-Atom Fields">
+  One record per atom:
+
+  - `_chem_comp_atom.comp_id` - Component ID
+  - `_chem_comp_atom.atom_id` - **Unique atom name**
+  - `_chem_comp_atom.type_symbol` - Element symbol
+  - `_chem_comp_atom.charge` - Formal charge
+  - `_chem_comp_atom.pdbx_leaving_atom_flag` - Leaving atom (`N` or `Y`)
+  - `_chem_comp_atom.pdbx_model_Cartn_x_ideal` - Ideal X coordinate
+  - `_chem_comp_atom.pdbx_model_Cartn_y_ideal` - Ideal Y coordinate
+  - `_chem_comp_atom.pdbx_model_Cartn_z_ideal` - Ideal Z coordinate
+  </Tab>
+
+  <Tab title="Per-Bond Fields">
+  One record per bond:
+
+  - `_chem_comp_bond.atom_id_1` - First atom ID
+  - `_chem_comp_bond.atom_id_2` - Second atom ID
+  - `_chem_comp_bond.value_order` - Bond order (`SING`, `DOUB`, `TRIP`)
+  - `_chem_comp_bond.pdbx_aromatic_flag` - Aromatic flag (`Y` or `N`)
+  </Tab>
+</Tabs>
+
+### Overriding Standard CCD Entries
+
+You can redefine standard CCD components:
+
+```json
+{
+  "sequences": [
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["ATP"]
+      }
+    }
+  ],
+  "userCCD": "data_ATP\n_chem_comp.id ATP\n..."
+}
+```
+
+This is useful for providing custom ideal coordinates.
+
+## Protein/RNA/DNA Modifications
+
+### Protein Post-Translational Modifications (PTMs)
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "PVLSCGEWQL",
+    "modifications": [
+      {"ptmType": "HY3", "ptmPosition": 1},
+      {"ptmType": "P1L", "ptmPosition": 5}
+    ]
+  }
+}
+```
+
+<Info>
+PTM codes:
+- Use standard CCD codes (e.g., `HY3`, `P1L`, `SEP`, `TPO`)
+- **Do not** include the `CCD_` prefix
+- Position is **1-based** (first residue = 1)
+</Info>
+
+### RNA Modifications
+
+```json
+{
+  "rna": {
+    "id": "B",
+    "sequence": "AGCU",
+    "modifications": [
+      {"modificationType": "2MG", "basePosition": 1},
+      {"modificationType": "5MC", "basePosition": 4}
+    ]
+  }
+}
+```
+
+Common RNA modifications: `2MG`, `5MC`, `5MU`, `PSU`, `1MA`, `M2G`
+
+### DNA Modifications
+
+```json
+{
+  "dna": {
+    "id": "C",
+    "sequence": "GACCTCT",
+    "modifications": [
+      {"modificationType": "6OG", "basePosition": 1},
+      {"modificationType": "6MA", "basePosition": 2}
+    ]
+  }
+}
+```
+
+Common DNA modifications: `6MA`, `6OG`, `5MC`, `5HC`
+
+## Complete Example
+
+```json
+{
+  "name": "Complex with ligands and modifications",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "PVLSCGEWQL",
+        "description": "Protein with PTMs",
+        "modifications": [
+          {"ptmType": "SEP", "ptmPosition": 5}
+        ]
+      }
+    },
+    {
+      "ligand": {
+        "id": ["L", "M", "N"],
+        "ccdCodes": ["ATP"],
+        "description": "Three ATP molecules"
+      }
+    },
+    {
+      "ligand": {
+        "id": "O",
+        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+        "description": "Custom SMILES ligand"
+      }
+    },
+    {
+      "ligand": {
+        "id": "P",
+        "ccdCodes": ["MG"],
+        "description": "Magnesium ion"
+      }
+    },
+    {
+      "ligand": {
+        "id": "G",
+        "ccdCodes": ["NAG", "FUC"],
+        "description": "Glycan (needs bonds)"
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["G", 1, "O6"], ["G", 2, "C1"]]
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+## Code References
+
+From `folding_input.py:789-827`:
+```python
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class Ligand:
+  """Ligand input.
+
+  Attributes:
+    id: Unique ligand "chain" identifier.
+    ccd_ids: The Chemical Component Dictionary or user-defined CCD IDs
+    smiles: The SMILES representation of the ligand.
+    description: An optional textual description of the ligand.
+  """
+  id: str
+  ccd_ids: Sequence[str] | None = None
+  smiles: str | None = None
+  description: str | None = None
+
+  def __post_init__(self):
+    if (self.ccd_ids is None) == (self.smiles is None):
+      raise ValueError('Ligand must have one of CCD ID or SMILES set.')
+```

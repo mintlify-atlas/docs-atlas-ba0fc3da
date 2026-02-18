@@ -1,0 +1,243 @@
+---
+title: "Troubleshooting"
+description: "Common problems and solutions for AlphaFold 3"
+---
+
+## Installation Issues
+
+<Accordion title="Docker build fails or takes too long">
+  ### Problem
+  The Docker build process fails or takes an extremely long time to complete.
+
+  ### Solutions
+  
+  1. **Increase Docker resources**: Ensure Docker has sufficient memory (at least 16GB) and CPU cores allocated
+  2. **Check disk space**: The build requires significant disk space (50GB+)
+  3. **Use a stable network connection**: Large dependencies need to be downloaded
+  4. **Clear Docker cache** if you encounter corruption:
+     ```bash
+     docker system prune -a
+     ```
+</Accordion>
+
+<Accordion title="Model parameters download fails">
+  ### Problem
+  Cannot download or access the AlphaFold 3 model parameters.
+
+  ### Solutions
+  
+  1. Ensure you have requested and received access via the [official form](https://forms.gle/svvpY4u2jsHEwWYS6)
+  2. Verify you received the download link directly from Google
+  3. Check that the model parameters directory is correctly mounted in Docker
+  4. Confirm file permissions allow read access
+</Accordion>
+
+<Accordion title="Database setup problems">
+  ### Problem
+  Issues downloading or configuring the genetic databases.
+
+  ### Solutions
+  
+  1. Ensure you have enough disk space (several TB required for full databases)
+  2. Verify network connectivity to database sources
+  3. Check the database directory structure matches the expected format
+  4. Use `--run_data_pipeline=false` to skip database searches during testing
+</Accordion>
+
+---
+
+## Runtime Errors
+
+<Accordion title="CUDA out of memory errors">
+  ### Problem
+  GPU memory errors during inference.
+
+  ### Solutions
+  
+  1. **Reduce complex sizes**: Try simpler or smaller protein complexes first
+  2. **Check GPU availability**: Ensure `--gpus all` flag is set
+  3. **Monitor GPU memory**: Use `nvidia-smi` to check available memory
+  4. **Use appropriate hardware**: AlphaFold 3 requires GPUs with at least 16GB VRAM
+  5. **Close other GPU processes**: Ensure no other programs are using the GPU
+</Accordion>
+
+<Accordion title="Bad predictions with clashing residues">
+  ### Problem
+  Output structures have severe clashes and ranking scores of -99 or lower.
+
+  ### Solutions
+  
+  <Warning>
+    This is a known issue with CUDA Capability 7.x GPUs (e.g., V100).
+  </Warning>
+
+  Set the XLA_FLAGS environment variable:
+  ```bash
+  export XLA_FLAGS="--xla_disable_hlo_passes=custom-kernel-fusion-rewriter"
+  ```
+
+  See the [Known Issues](/resources/known-issues) page for more details.
+</Accordion>
+
+<Accordion title="JSON parsing errors">
+  ### Problem
+  Input JSON file is rejected or causes parsing errors.
+
+  ### Solutions
+  
+  1. **Validate JSON syntax**: Use a JSON validator to check for syntax errors
+  2. **Check required fields**: Ensure `name`, `sequences`, `dialect`, and `version` are present
+  3. **Verify sequence format**: Check protein sequences use valid amino acid codes
+  4. **Review ligand definitions**: Ensure SMILES strings are properly formatted
+  5. **Check bonded atom pairs**: Verify indices match the actual atoms
+  
+  Example valid JSON structure:
+  ```json
+  {
+    "name": "my_protein",
+    "sequences": [
+      {
+        "protein": {
+          "id": ["A"],
+          "sequence": "MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYASL"
+        }
+      }
+    ],
+    "modelSeeds": [1],
+    "dialect": "alphafold3",
+    "version": 1
+  }
+  ```
+</Accordion>
+
+<Accordion title="Data pipeline takes too long or hangs">
+  ### Problem
+  The genetic search phase runs for many hours or appears to hang.
+
+  ### Solutions
+  
+  1. **This is expected behavior**: Data pipeline can take hours or even days for complex targets
+  2. **Run on CPU-only machine**: Use `--run_data_pipeline=true --run_inference=false` on a separate machine
+  3. **Check database accessibility**: Ensure all database files are readable
+  4. **Monitor progress**: Check log files for activity
+  5. **Skip for testing**: Use `--run_data_pipeline=false` and provide MSAs manually
+</Accordion>
+
+---
+
+## Output Issues
+
+<Accordion title="Missing output files">
+  ### Problem
+  Expected output files (CIF, JSON) are not generated.
+
+  ### Solutions
+  
+  1. **Check the output directory**: Verify the path is correctly mounted
+  2. **Review error logs**: Look for error messages in the console output
+  3. **Verify disk space**: Ensure sufficient space for output files
+  4. **Check permissions**: Output directory must be writable
+</Accordion>
+
+<Accordion title="Poor quality predictions">
+  ### Problem
+  Predictions have low confidence or don't match expected structures.
+
+  ### Solutions
+  
+  1. **Check input quality**: Verify sequences are correct and complete
+  2. **Review confidence metrics**: Low pLDDT scores indicate uncertain regions
+  3. **Inspect ranking scores**: Compare multiple model seeds
+  4. **Validate ligand geometry**: Use tools like RDKit to check SMILES
+  5. **Try different model seeds**: Generate multiple predictions with different seeds
+  6. **Review covalent modifications**: Ensure bonded atom pairs are correctly specified
+</Accordion>
+
+<Accordion title="Ligand stereochemistry issues">
+  ### Problem
+  Ligands (especially glycans) appear stereochemically incorrect.
+
+  ### Solutions
+  
+  <Info>
+    See the [Community Tools](/resources/community-tools) page for resources on modeling glycans and ligands.
+  </Info>
+
+  1. **Check SMILES definition**: Ensure stereochemistry is explicitly defined
+  2. **Verify CCD codes**: Use correct Chemical Component Dictionary codes
+  3. **Review bonded atom pairs**: Double-check atom indices
+  4. **Consult glycan modeling guide**: See the paper on [modeling glycans with AlphaFold 3](https://doi.org/10.1093/glycob/cwaf048)
+</Accordion>
+
+---
+
+## Docker Issues
+
+<Accordion title="Volume mounting problems">
+  ### Problem
+  Docker cannot access mounted directories or files.
+
+  ### Solutions
+  
+  1. **Use absolute paths**: Always use full paths, not relative paths
+  2. **Check Docker permissions**: Ensure Docker has access to the directories
+  3. **Verify paths exist**: Create directories before mounting
+  4. **Check SELinux/AppArmor**: May need to adjust security settings on Linux
+  
+  Example with correct paths:
+  ```bash
+  docker run -it \
+      --volume $HOME/af_input:/root/af_input \
+      --volume $HOME/af_output:/root/af_output \
+      --volume $HOME/models:/root/models \
+      --volume $HOME/databases:/root/public_databases \
+      --gpus all \
+      alphafold3 \
+      python run_alphafold.py \
+      --json_path=/root/af_input/fold_input.json \
+      --model_dir=/root/models \
+      --output_dir=/root/af_output
+  ```
+</Accordion>
+
+<Accordion title="GPU not detected in Docker">
+  ### Problem
+  AlphaFold 3 cannot access the GPU inside Docker.
+
+  ### Solutions
+  
+  1. **Install nvidia-docker2**: Required for GPU access
+  2. **Use --gpus all flag**: Must be included in docker run command
+  3. **Check NVIDIA drivers**: Ensure host has proper NVIDIA drivers installed
+  4. **Test GPU access**: Run `nvidia-smi` inside the container
+  5. **Restart Docker daemon**: Sometimes required after installing nvidia-docker2
+</Accordion>
+
+---
+
+## Getting Help
+
+<Note>
+  If your issue isn't covered here, additional resources are available.
+</Note>
+
+### Resources
+
+- **Known Issues**: Check the [Known Issues](/resources/known-issues) page
+- **FAQ**: See the [Frequently Asked Questions](/resources/faq) page
+- **GitHub Issues**: Search the [issues tracker](https://github.com/google-deepmind/alphafold3/issues)
+- **Documentation**: Review the [installation](/installation), [input](/guides/input-format), and [output](/guides/output-format) documentation
+
+### Contact Support
+
+For questions not answered in the documentation:
+
+**Email**: [alphafold@google.com](mailto:alphafold@google.com)
+
+When contacting support, please include:
+- AlphaFold 3 version or commit hash
+- Hardware configuration (GPU model, RAM, CPU)
+- Operating system and Docker version
+- Complete error messages
+- Input JSON file (if applicable)
+- Steps to reproduce the issue

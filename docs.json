@@ -1,122 +1,141 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "AlphaFold 3",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1976D2",
+    "light": "#42A5F5",
+    "dark": "#0D47A1"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/google-deepmind/alphafold3"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/google-deepmind/alphafold3"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
+              "installation",
               "quickstart",
-              "development"
+              "obtaining-model-parameters"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/overview",
+              "concepts/inference-pipeline",
+              "concepts/data-pipeline",
+              "concepts/model-architecture"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "User Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/input-format",
+              "guides/json-specification",
+              "guides/output-format",
+              "guides/confidence-metrics",
+              "guides/running-docker",
+              "guides/running-singularity",
+              "guides/performance-optimization",
+              "guides/database-setup"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Advanced Usage",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "advanced/custom-msa",
+              "advanced/custom-templates",
+              "advanced/ligands-and-modifications",
+              "advanced/covalent-bonds",
+              "advanced/pipeline-stages",
+              "advanced/batch-processing"
+            ]
+          },
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/known-issues",
+              "resources/troubleshooting",
+              "resources/faq",
+              "resources/community-tools",
+              "resources/citation"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Modules",
             "pages": [
-              "api-reference/introduction"
+              "api/run-alphafold",
+              "api/folding-input",
+              "api/model",
+              "api/pipeline"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Data Processing",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/data/featurisation",
+              "api/data/msa",
+              "api/data/templates"
+            ]
+          },
+          {
+            "group": "Model Components",
+            "pages": [
+              "api/model/inference",
+              "api/model/features",
+              "api/model/post-processing"
+            ]
+          },
+          {
+            "group": "Structure",
+            "pages": [
+              "api/structure/structure",
+              "api/structure/mmcif"
+            ]
+          },
+          {
+            "group": "Constants & Utilities",
+            "pages": [
+              "api/constants/chemical-components",
+              "api/constants/residue-names",
+              "api/common/resources"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Terms of Use",
+        "groups": [
+          {
+            "group": "Legal",
+            "pages": [
+              "legal/source-code-license",
+              "legal/model-parameters-terms",
+              "legal/prohibited-use-policy",
+              "legal/output-terms"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

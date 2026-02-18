@@ -1,0 +1,579 @@
+---
+title: 'Database Setup'
+description: 'Setting up genetic and structural databases for AlphaFold 3'
+icon: 'database'
+---
+
+## Overview
+
+AlphaFold 3 requires multiple genetic and structural databases for generating multiple sequence alignments (MSAs) and structural templates. These databases enable the model to leverage evolutionary information.
+
+<Warning>
+**Total size**: ~252 GB compressed, ~630 GB uncompressed. Plan for sufficient storage and bandwidth.
+</Warning>
+
+## Required Databases
+
+AlphaFold 3 uses the following databases:
+
+### Protein Databases
+
+<CardGroup cols={2}>
+  <Card title="BFD Small" icon="dna">
+    **Modified BFD** (Big Fantastic Database)
+    
+    Clustered protein sequences for fast MSA generation
+    
+    Version: 2022-09-28
+  </Card>
+  
+  <Card title="MGnify" icon="bacteria">
+    **Metagenomic sequences**
+    
+    Protein sequences from metagenomics studies
+    
+    Version: 2022_05
+  </Card>
+  
+  <Card title="UniProt" icon="book">
+    **Universal Protein Resource**
+    
+    Comprehensive protein sequence database
+    
+    Version: 2021_04
+  </Card>
+  
+  <Card title="UniRef90" icon="layer-group">
+    **UniProt Reference Clusters**
+    
+    90% identity clustered UniProt sequences
+    
+    Version: 2022_05
+  </Card>
+</CardGroup>
+
+### RNA Databases
+
+<CardGroup cols={3}>
+  <Card title="NT-RNA" icon="circle-nodes">
+    **Nucleotide RNA**
+    
+    Clustered RNA sequences from NCBI
+    
+    Version: 2023_02_23
+  </Card>
+  
+  <Card title="RFam" icon="diagram-project">
+    **RNA families**
+    
+    RNA sequence families database
+    
+    Version: 14_9
+  </Card>
+  
+  <Card title="RNACentral" icon="database">
+    **RNA sequence database**
+    
+    Comprehensive RNA sequence collection
+    
+    Version: 21_0
+  </Card>
+</CardGroup>
+
+### Structural Databases
+
+<CardGroup cols={2}>
+  <Card title="PDB mmCIF" icon="cube">
+    **Protein Data Bank structures**
+    
+    ~200,000 structures in mmCIF format
+    
+    Version: 2022-09-28
+  </Card>
+  
+  <Card title="PDB Seqres" icon="file-lines">
+    **PDB sequences**
+    
+    Sequence database for template search
+    
+    Version: 2022-09-28
+  </Card>
+</CardGroup>
+
+## Quick Installation
+
+### Automated Download Script
+
+AlphaFold 3 provides a download script that fetches all required databases:
+
+```bash
+cd alphafold3
+./fetch_databases.sh [<DB_DIR>]
+```
+
+<ParamField path="DB_DIR" type="path" default="$HOME/public_databases">
+  Target directory for databases. Must NOT be inside AlphaFold 3 repository.
+</ParamField>
+
+### Prerequisites
+
+```bash
+sudo apt install wget zstd
+```
+
+### Running in Screen/Tmux
+
+<Note>
+Download takes ~45 minutes on fast connections. Use `screen` or `tmux` for long-running processes.
+</Note>
+
+```bash
+# Start screen session
+screen -S alphafold_dl
+
+# Run download
+cd alphafold3
+./fetch_databases.sh /data/alphafold_databases
+
+# Detach: Ctrl+A, then D
+# Reattach later: screen -r alphafold_dl
+```
+
+## Manual Installation
+
+If you prefer manual download or need specific versions:
+
+### Protein Databases
+
+<Tabs>
+  <Tab title="BFD Small">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/bfd-first_non_consensus_sequences.fasta.gz
+    gunzip bfd-first_non_consensus_sequences.fasta.gz
+    ```
+    
+    **Size**: ~17 GB compressed, ~65 GB uncompressed
+  </Tab>
+  
+  <Tab title="MGnify">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/mgy_clusters_2022_05.fa.gz
+    gunzip mgy_clusters_2022_05.fa.gz
+    ```
+    
+    **Size**: ~64 GB compressed, ~120 GB uncompressed
+  </Tab>
+  
+  <Tab title="UniProt">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/uniprot_all_2021_04.fa.gz
+    gunzip uniprot_all_2021_04.fa.gz
+    ```
+    
+    **Size**: ~50 GB compressed, ~100 GB uncompressed
+  </Tab>
+  
+  <Tab title="UniRef90">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/uniref90_2022_05.fa.gz
+    gunzip uniref90_2022_05.fa.gz
+    ```
+    
+    **Size**: ~55 GB compressed, ~140 GB uncompressed
+  </Tab>
+</Tabs>
+
+### RNA Databases
+
+<Tabs>
+  <Tab title="NT-RNA">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta.gz
+    gunzip nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta.gz
+    ```
+    
+    **Size**: ~8 GB compressed, ~30 GB uncompressed
+  </Tab>
+  
+  <Tab title="RFam">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta.gz
+    gunzip rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta.gz
+    ```
+    
+    **Size**: ~10 MB compressed, ~50 MB uncompressed
+  </Tab>
+  
+  <Tab title="RNACentral">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/rnacentral_active_seq_id_90_cov_80_linclust.fasta.gz
+    gunzip rnacentral_active_seq_id_90_cov_80_linclust.fasta.gz
+    ```
+    
+    **Size**: ~2 GB compressed, ~8 GB uncompressed
+  </Tab>
+</Tabs>
+
+### Structural Databases
+
+<Tabs>
+  <Tab title="PDB mmCIF">
+    ```bash
+    # Download all mmCIF files
+    mkdir -p mmcif_files
+    rsync -rlpt -v -z --delete --port=33444 \
+        rsync.rcsb.org::ftp_data/structures/divided/mmCIF/ \
+        mmcif_files/
+    ```
+    
+    **Size**: ~200,000 files, ~60 GB
+  </Tab>
+  
+  <Tab title="PDB Seqres">
+    ```bash
+    wget https://storage.googleapis.com/alphafold-databases/v2.3.2/pdb_seqres_2022_09_28.fasta.gz
+    gunzip pdb_seqres_2022_09_28.fasta.gz
+    ```
+    
+    **Size**: ~12 MB compressed, ~60 MB uncompressed
+  </Tab>
+</Tabs>
+
+## Directory Structure
+
+After installation, your database directory should look like:
+
+```text
+/path/to/databases/
+├── mmcif_files/
+│   ├── 00/
+│   ├── 01/
+│   ├── 02/
+│   ├── ...
+│   └── zz/
+├── bfd-first_non_consensus_sequences.fasta
+├── mgy_clusters_2022_05.fa
+├── nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta
+├── pdb_seqres_2022_09_28.fasta
+├── rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta
+├── rnacentral_active_seq_id_90_cov_80_linclust.fasta
+├── uniprot_all_2021_04.fa
+└── uniref90_2022_05.fa
+```
+
+## Storage Optimization
+
+### Using SSD for Performance
+
+<Warning>
+Genetic search is I/O intensive. SSD storage provides 10-100× speedup over HDD.
+</Warning>
+
+#### Copying to SSD
+
+```bash
+# GCP: Mount and format SSD
+sudo mkdir /mnt/disks/ssd
+sudo mkfs.ext4 -F /dev/nvme0n1
+sudo mount /dev/nvme0n1 /mnt/disks/ssd
+
+# Copy databases
+sudo rsync -avh --progress /path/to/databases/ /mnt/disks/ssd/databases/
+```
+
+#### Using RAM Disk (Maximum Performance)
+
+```bash
+# Create 300GB RAM disk
+sudo mkdir /mnt/ramdisk
+sudo mount -t tmpfs -o size=300G tmpfs /mnt/ramdisk
+
+# Copy most-used databases
+cp -r /path/to/databases/* /mnt/ramdisk/
+```
+
+<Note>
+RAM disk contents are lost on reboot. Only for temporary high-performance scenarios.
+</Note>
+
+### Partial SSD Setup
+
+Use SSD for frequently accessed databases, HDD for others:
+
+```bash
+# Copy frequently used databases to SSD
+cp /hdd/databases/uniref90_2022_05.fa /ssd/databases/
+cp /hdd/databases/mgy_clusters_2022_05.fa /ssd/databases/
+cp /hdd/databases/bfd-first_non_consensus_sequences.fasta /ssd/databases/
+
+# Run with multiple db_dir flags
+python run_alphafold.py \
+    --db_dir=/ssd/databases \
+    --db_dir=/hdd/databases \
+    ...
+```
+
+AlphaFold 3 checks SSD first, falls back to HDD.
+
+## Database Sharding
+
+For high-throughput environments with many CPU cores:
+
+### Why Shard?
+
+<Note>
+Sharding enables parallel genetic search across many CPU cores, dramatically reducing wall-clock time.
+</Note>
+
+**Benefits**:
+- Utilize 32+ core systems effectively
+- Reduce genetic search time by 10-50×
+- Maximize disk I/O parallelization
+
+### Sharding Process
+
+<Steps>
+  <Step title="Install seqkit">
+    ```bash
+    # From conda
+    conda install -c bioconda seqkit
+    
+    # Or download binary
+    wget https://github.com/shenwei356/seqkit/releases/download/v2.5.1/seqkit_linux_amd64.tar.gz
+    tar -xzf seqkit_linux_amd64.tar.gz
+    sudo mv seqkit /usr/local/bin/
+    ```
+  </Step>
+  
+  <Step title="Shuffle Sequences">
+    ```bash
+    seqkit shuffle --two-pass uniref90_2022_05.fa > uniref90_shuffled.fa
+    ```
+    
+    Random shuffling ensures balanced shard sizes.
+  </Step>
+  
+  <Step title="Split into Shards">
+    ```bash
+    # Split into 128 shards
+    seqkit split2 --by-part 128 uniref90_shuffled.fa
+    ```
+    
+    Output: `uniref90_shuffled.fa.split/uniref90_shuffled.part_001.fa`, etc.
+  </Step>
+  
+  <Step title="Rename with Padding">
+    ```bash
+    cd uniref90_shuffled.fa.split
+    for i in {1..128}; do
+        padded=$(printf "%05d" $((i-1)))
+        mv uniref90_shuffled.part_$(printf "%03d" $i).fa \
+           ../uniref90.fasta-${padded}-of-00128
+    done
+    ```
+  </Step>
+  
+  <Step title="Count Sequences/Bases">
+    ```bash
+    # For proteins: count sequences
+    seqkit stats -T uniref90.fasta-* | awk '{sum+=$4} END {print sum}'
+    
+    # For RNA: count bases
+    seqkit stats -T ntrna.fasta-* | awk '{sum+=$5} END {print sum}'
+    ```
+    
+    Save these values for Z-value flags.
+  </Step>
+</Steps>
+
+### Using Sharded Databases
+
+```bash
+python run_alphafold.py \
+    --uniref90_database_path="uniref90.fasta@128" \
+    --uniref90_z_value=153742194 \
+    --jackhmmer_n_cpu=2 \
+    --jackhmmer_max_parallel_shards=16 \
+    ...
+```
+
+<ParamField path="@128" type="shard_count">
+  Specifies 128 shards with pattern `uniref90.fasta-XXXXX-of-00128`
+</ParamField>
+
+<ParamField path="uniref90_z_value" type="integer">
+  Total sequence count across all shards (for e-value scaling)
+</ParamField>
+
+<ParamField path="jackhmmer_max_parallel_shards" type="integer">
+  Maximum shards to process in parallel
+</ParamField>
+
+### Recommended Shard Counts
+
+| Database | Unsharded Size | Recommended Shards |
+|----------|----------------|--------------------|
+| UniRef90 | 140 GB | 128-256 |
+| MGnify | 120 GB | 256-512 |
+| BFD Small | 65 GB | 64-128 |
+| UniProt | 100 GB | 128-256 |
+| NT-RNA | 30 GB | 64-256 |
+| RNACentral | 8 GB | 16-64 |
+| RFam | 50 MB | 8-16 |
+
+<Note>
+For consistent performance, aim for equal shard sizes (~0.5-2 GB per shard).
+</Note>
+
+## Permissions and Access
+
+### Setting Permissions
+
+<Warning>
+Improper permissions cause opaque MSA tool errors. Ensure full read/write access.
+</Warning>
+
+```bash
+# Set directory permissions
+sudo chmod 755 --recursive /path/to/databases
+
+# If running Docker, ensure container can read
+sudo chown -R $(id -u):$(id -g) /path/to/databases
+```
+
+### Docker Mounts
+
+```bash
+docker run -it \
+    --volume /path/to/databases:/root/public_databases:ro \
+    ...
+```
+
+<Note>
+Use `:ro` (read-only) suffix for safety.
+</Note>
+
+### Singularity Binds
+
+```bash
+singularity exec \
+    --bind /path/to/databases:/root/public_databases \
+    ...
+```
+
+## Verifying Installation
+
+### Check Files Exist
+
+```bash
+ls -lh /path/to/databases/*.fa*
+ls -lh /path/to/databases/mmcif_files/ | head
+```
+
+### Test with AlphaFold
+
+```bash
+python run_alphafold.py \
+    --json_path=test_input.json \
+    --db_dir=/path/to/databases \
+    --model_dir=/path/to/models \
+    --output_dir=/path/to/output
+```
+
+Successful run confirms database setup.
+
+## Database Updates
+
+AlphaFold 3 uses specific database versions from the paper. Newer versions may work but are not officially supported.
+
+<Warning>
+Using different database versions may affect prediction quality and reproducibility.
+</Warning>
+
+If you must update:
+
+1. Download new version to separate directory
+2. Test with known inputs
+3. Compare results to original databases
+4. Update `--db_dir` flags
+
+## Troubleshooting
+
+### Download Interrupted
+
+```bash
+# Resume wget download
+wget -c <url>
+
+# Resume rsync
+rsync -avh --progress --partial /source /destination
+```
+
+### Corrupted Files
+
+```bash
+# Check file integrity
+md5sum uniref90_2022_05.fa.gz
+# Compare with published checksum
+
+# Re-download if needed
+rm corrupted_file.gz
+wget <url>
+```
+
+### Insufficient Space
+
+```bash
+# Check available space
+df -h /path/to/databases
+
+# Clean up compressed files after extraction
+rm *.gz
+```
+
+### Permission Errors
+
+```bash
+# Fix ownership
+sudo chown -R $USER:$USER /path/to/databases
+
+# Fix permissions
+chmod -R 755 /path/to/databases
+```
+
+### MSA Tools Can't Find Databases
+
+```bash
+# Check paths are absolute
+python run_alphafold.py \
+    --db_dir=/absolute/path/to/databases \
+    ...
+
+# Verify files are readable
+cat /path/to/databases/uniref90_2022_05.fa | head
+```
+
+## Database Licenses
+
+All databases are available under permissive licenses:
+
+- **BFD**: CC BY 4.0
+- **MGnify**: CC0 1.0
+- **PDB**: CC0 1.0
+- **UniProt/UniRef**: CC BY 4.0
+- **NT-RNA**: Modified (see paper)
+- **RFam**: CC0 1.0
+- **RNACentral**: CC0 1.0
+
+See [AlphaFold 3 README](https://github.com/google-deepmind/alphafold3#mirrored-and-reference-databases) for full attribution.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Performance" icon="gauge" href="/guides/performance-optimization">
+    Optimize database access and search speed
+  </Card>
+  <Card title="Running Docker" icon="docker" href="/guides/running-docker">
+    Use databases with AlphaFold 3
+  </Card>
+</CardGroup>

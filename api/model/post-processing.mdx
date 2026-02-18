@@ -1,0 +1,359 @@
+---
+title: "Post-processing"
+description: "Post-processing utilities for AlphaFold 3 inference results and output file generation."
+---
+
+## Overview
+
+The post-processing module provides utilities for converting raw inference results into final output files, including mmCIF structures with metadata, confidence JSON files, and compressed outputs.
+
+## ProcessedInferenceResult
+
+Dataclass storing all processed outputs for a single inference result.
+
+```python
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class ProcessedInferenceResult:
+    cif: bytes
+    mean_confidence_1d: float
+    ranking_score: float
+    structure_confidence_summary_json: bytes
+    structure_full_data_json: bytes
+    model_id: bytes
+```
+
+### Attributes
+
+<ResponseField name="cif" type="bytes" required>
+  mmCIF file containing the predicted structure with full metadata and legal comments.
+</ResponseField>
+
+<ResponseField name="mean_confidence_1d" type="float" required>
+  Mean 1D confidence score calculated from per-atom confidence values.
+</ResponseField>
+
+<ResponseField name="ranking_score" type="float" required>
+  Overall ranking score extracted from inference metadata. Used to rank multiple predictions.
+</ResponseField>
+
+<ResponseField name="structure_confidence_summary_json" type="bytes" required>
+  JSON file content with structure confidence summary metrics.
+</ResponseField>
+
+<ResponseField name="structure_full_data_json" type="bytes" required>
+  JSON file content with full structure confidence data including matrices.
+</ResponseField>
+
+<ResponseField name="model_id" type="bytes" required>
+  Identifier of the model that produced this result.
+</ResponseField>
+
+## Core Functions
+
+### post_process_inference_result
+
+Converts raw inference result into processed outputs ready for file writing.
+
+```python
+def post_process_inference_result(
+    inference_result: model.InferenceResult,
+) -> ProcessedInferenceResult:
+    """Returns cif, confidence JSONs, mean_confidence_1d, and ranking score.
+    
+    Adds mmCIF metadata fields including version, timestamp, and model ID.
+    Computes confidence metrics from the inference result.
+    
+    Args:
+        inference_result: Raw inference result from model prediction
+        
+    Returns:
+        ProcessedInferenceResult with all output files and metrics
+    """
+```
+
+<ParamField path="inference_result" type="model.InferenceResult" required>
+  Raw inference result containing predicted structure and metadata.
+</ParamField>
+
+**Processing steps:**
+1. Adds metadata to mmCIF (version, timestamp, model ID)
+2. Adds legal comment header to mmCIF
+3. Computes 1D confidence from predicted structure
+4. Generates confidence summary JSON
+5. Generates full confidence data JSON
+6. Extracts ranking score from metadata
+
+### write_output
+
+Writes all inference outputs to a directory.
+
+```python
+def write_output(
+    inference_result: model.InferenceResult,
+    output_dir: os.PathLike[str] | str,
+    terms_of_use: str | None = None,
+    name: str | None = None,
+    compress: bool = False,
+) -> None:
+    """Writes processed inference result to a directory.
+    
+    Creates the following files:
+    - {name}_model.cif (.zst if compressed)
+    - {name}_confidences.json (.zst if compressed)
+    - {name}_summary_confidences.json
+    - TERMS_OF_USE.md (if terms_of_use provided)
+    """
+```
+
+<ParamField path="inference_result" type="model.InferenceResult" required>
+  Raw inference result from model.
+</ParamField>
+
+<ParamField path="output_dir" type="os.PathLike[str] | str" required>
+  Directory path where output files will be written.
+</ParamField>
+
+<ParamField path="terms_of_use" type="str | None">
+  Terms of use text to write to TERMS_OF_USE.md file.
+</ParamField>
+
+<ParamField path="name" type="str | None">
+  Prefix for output files. If None, no prefix is used.
+</ParamField>
+
+<ParamField path="compress" type="bool" default={false}>
+  Whether to compress CIF and full confidence JSON with Zstandard (.zst).
+</ParamField>
+
+**Output files:**
+
+<Expandable title="Output file structure">
+```bash
+output_dir/
+├── model.cif                      # or {name}_model.cif
+├── confidences.json               # or {name}_confidences.json  
+├── summary_confidences.json       # or {name}_summary_confidences.json
+└── TERMS_OF_USE.md                # (if terms_of_use provided)
+```
+
+With `compress=True`:
+```bash
+output_dir/
+├── model.cif.zst                  # Compressed mmCIF
+├── confidences.json.zst           # Compressed full confidence data
+├── summary_confidences.json       # Not compressed
+└── TERMS_OF_USE.md
+```
+</Expandable>
+
+### write_embeddings
+
+Writes model embeddings to compressed NumPy archive.
+
+```python
+def write_embeddings(
+    embeddings: dict[str, np.ndarray],
+    output_dir: os.PathLike[str] | str,
+    name: str | None = None,
+) -> None:
+    """Writes embeddings to a directory as compressed .npz file.
+    
+    Args:
+        embeddings: Dictionary mapping embedding names to arrays
+        output_dir: Output directory path
+        name: Optional prefix for output file
+    """
+```
+
+<ParamField path="embeddings" type="dict[str, np.ndarray]" required>
+  Dictionary of embeddings from model. Typically contains:
+  - `single_embeddings`: Per-token single representation
+  - `pair_embeddings`: Pairwise token representations
+</ParamField>
+
+<ParamField path="output_dir" type="os.PathLike[str] | str" required>
+  Directory where embeddings file will be written.
+</ParamField>
+
+<ParamField path="name" type="str | None">
+  Prefix for output file. Creates `{name}_embeddings.npz` or `embeddings.npz`.
+</ParamField>
+
+## mmCIF Metadata
+
+The post-processing module adds the following metadata to mmCIF files:
+
+- **Version**: AlphaFold 3 version and timestamp
+- **Model ID**: Unique identifier for the model weights used
+- **Legal comment**: Copyright and license information
+- **Method**: Computational prediction method details
+
+## Confidence Metrics
+
+### Structure Confidence Summary
+
+Includes high-level metrics:
+- Mean per-atom confidence (pLDDT)
+- Per-chain confidence scores
+- Interface confidence metrics
+- Chain pair confidence
+
+### Structure Confidence Full Data
+
+Includes detailed matrices:
+- **PAE (Predicted Aligned Error)**: Expected error in predicted aligned positions
+- **PDE (Predicted Distance Error)**: Expected error in predicted distances
+- **Contact probabilities**: Likelihood of residue-residue contacts
+- **Per-residue confidence**: pLDDT scores for each residue
+
+## Usage Examples
+
+### Basic Output Writing
+
+```python
+from alphafold3.model import model
+from alphafold3.model import post_processing
+
+# Get inference result from model
+inference_result = next(model.Model.get_inference_result(
+    batch=batch,
+    result=model_output,
+    target_name="my_protein"
+))
+
+# Write all outputs
+post_processing.write_output(
+    inference_result=inference_result,
+    output_dir="./predictions",
+    name="seed_1",
+    compress=False
+)
+```
+
+### Compressed Output
+
+```python
+# Write compressed outputs (smaller file size)
+post_processing.write_output(
+    inference_result=inference_result,
+    output_dir="./predictions",
+    name="seed_1",
+    compress=True  # Creates .zst files
+)
+```
+
+### Writing Embeddings
+
+```python
+# Extract embeddings from model output
+if 'single_embeddings' in model_output:
+    embeddings = {
+        'single': model_output['single_embeddings'],
+        'pair': model_output['pair_embeddings']
+    }
+    
+    post_processing.write_embeddings(
+        embeddings=embeddings,
+        output_dir="./predictions",
+        name="seed_1"
+    )
+```
+
+### Manual Post-processing
+
+```python
+# Post-process without writing files
+processed = post_processing.post_process_inference_result(
+    inference_result
+)
+
+# Access individual components
+print(f"Mean confidence: {processed.mean_confidence_1d:.3f}")
+print(f"Ranking score: {processed.ranking_score:.3f}")
+
+# Save CIF manually
+with open("structure.cif", "wb") as f:
+    f.write(processed.cif)
+
+# Parse confidence JSON
+import json
+confidence_data = json.loads(processed.structure_full_data_json)
+pae_matrix = confidence_data['pae']
+```
+
+### Batch Processing Multiple Seeds
+
+```python
+import os
+
+# Run multiple predictions with different seeds
+for seed in range(5):
+    model_output = run_model(batch, seed=seed)
+    
+    for idx, inference_result in enumerate(
+        model.Model.get_inference_result(batch, model_output)
+    ):
+        output_name = f"seed_{seed}_sample_{idx}"
+        post_processing.write_output(
+            inference_result=inference_result,
+            output_dir="./predictions",
+            name=output_name,
+            compress=True
+        )
+
+# Rank predictions by ranking score
+from pathlib import Path
+import json
+
+predictions = []
+for json_file in Path("./predictions").glob("*summary_confidences.json"):
+    with open(json_file) as f:
+        data = json.load(f)
+        predictions.append({
+            'file': json_file.stem,
+            'ranking_score': data['ranking_score']
+        })
+
+predictions.sort(key=lambda x: x['ranking_score'], reverse=True)
+print("Best prediction:", predictions[0]['file'])
+```
+
+## Output File Formats
+
+### mmCIF (.cif)
+
+Standard crystallographic format containing:
+- Atomic coordinates
+- B-factors (pLDDT values)
+- Chain and residue annotations
+- Metadata (method, version, model ID)
+
+### Summary Confidences JSON
+
+```python
+{
+  "ranking_score": 0.85,
+  "mean_plddt": 82.4,
+  "ptm": 0.88,
+  "iptm": 0.79,
+  "chain_pair_confidence": {...},
+  "fraction_disordered": 0.12,
+  "has_clash": false
+}
+```
+
+### Full Confidences JSON
+
+```python
+{
+  "pae": [[0.5, 2.1, ...], ...],  # (N, N) matrix
+  "pde": [[1.2, 3.4, ...], ...],  # (N, N) matrix
+  "contact_probs": [[0.95, 0.02, ...], ...],
+  "plddt": [85.2, 79.3, ...]  # Per-residue
+}
+```
+
+## Related
+
+- [Inference](/api/model/inference) - Model predictions and InferenceResult
+- [Features](/api/model/features) - Input feature processing

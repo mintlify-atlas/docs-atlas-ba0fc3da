@@ -1,0 +1,308 @@
+---
+title: "Resources"
+description: "Utilities for loading external resources, tools, and data files"
+---
+
+## Overview
+
+The `resources` module provides utilities for accessing external resources such as data files and tools that are packaged with AlphaFold 3. It handles path resolution and file operations for resources stored within the AlphaFold 3 package structure.
+
+**Module Path:** `alphafold3.common.resources`
+
+---
+
+## Constants
+
+### ROOT
+
+```python
+ROOT: Final[pathlib.Path]
+```
+
+The root directory path for AlphaFold 3 data resources. This is resolved at import time and points to the parent directory of the `alphafold3.common` module.
+
+**Example:**
+
+```python
+from alphafold3.common import resources
+
+print(resources.ROOT)
+# Output: PosixPath('/path/to/alphafold3')
+```
+
+---
+
+## Functions
+
+### filename
+
+```python
+def filename(name: str | os.PathLike[str]) -> str
+```
+
+Returns the absolute path to an external resource.
+
+<ParamField path="name" type="str | os.PathLike[str]" required>
+  The name of the resource corresponding to its path relative to the root of the repository
+</ParamField>
+
+**Returns:** Absolute path as a string (POSIX format)
+
+**Note:** This function causes package file unpacking when used with packaged resources (e.g., `.par` files), which might be unfriendly on diskless machines.
+
+**Example:**
+
+```python
+from alphafold3.common import resources
+
+# Get path to a data file
+data_file = resources.filename('constants/converters/ccd.pickle')
+print(data_file)
+# Output: '/path/to/alphafold3/constants/converters/ccd.pickle'
+
+# Using with pathlib
+from pathlib import Path
+resource_path = resources.filename(Path('data') / 'config.json')
+```
+
+---
+
+### open_resource
+
+```python
+@typing.overload
+def open_resource(
+    name: str | os.PathLike[str], 
+    mode: Literal['r', 'rt'] = 'rt'
+) -> TextIO: ...
+
+@typing.overload
+def open_resource(
+    name: str | os.PathLike[str], 
+    mode: Literal['rb']
+) -> BinaryIO: ...
+
+def open_resource(
+    name: str | os.PathLike[str], 
+    mode: str = 'rb'
+) -> TextIO | BinaryIO
+```
+
+Returns an open file object for the named resource.
+
+<ParamField path="name" type="str | os.PathLike[str]" required>
+  The name of the resource corresponding to its path relative to the root of the repository
+</ParamField>
+
+<ParamField path="mode" type="str" default="'rb'">
+  The mode to use when opening the file:
+  - `'r'` or `'rt'`: Read text mode (returns `TextIO`)
+  - `'rb'`: Read binary mode (returns `BinaryIO`)
+</ParamField>
+
+**Returns:** An open file object (`TextIO` or `BinaryIO` depending on mode)
+
+**Example:**
+
+```python
+from alphafold3.common import resources
+
+# Read a text file
+with resources.open_resource('data/config.txt', mode='r') as f:
+    content = f.read()
+    print(content)
+
+# Read a binary file
+with resources.open_resource('data/model.bin', mode='rb') as f:
+    binary_data = f.read()
+    print(f"Read {len(binary_data)} bytes")
+
+# Default mode is binary
+with resources.open_resource('data/weights.pkl') as f:
+    import pickle
+    data = pickle.load(f)
+```
+
+---
+
+### get_resource_dir
+
+```python
+def get_resource_dir(path: str | os.PathLike[str]) -> os.PathLike[str]
+```
+
+Returns the full path to a resource directory.
+
+<ParamField path="path" type="str | os.PathLike[str]" required>
+  The relative path to the directory from the repository root
+</ParamField>
+
+**Returns:** An `os.PathLike[str]` object representing the full directory path
+
+**Example:**
+
+```python
+from alphafold3.common import resources
+
+# Get path to a resource directory
+data_dir = resources.get_resource_dir('constants/converters')
+print(data_dir)
+# Output: PosixPath('/path/to/alphafold3/constants/converters')
+
+# Use with os.listdir or other file operations
+import os
+files = os.listdir(data_dir)
+print(f"Files in directory: {files}")
+```
+
+---
+
+### walk
+
+```python
+def walk(path: str) -> Iterator[tuple[str, list[str], list[str]]]
+```
+
+Walks the directory tree of resources similar to `os.walk()`.
+
+<ParamField path="path" type="str" required>
+  The relative path to walk from the repository root
+</ParamField>
+
+**Returns:** An iterator yielding tuples of `(dirpath, dirnames, filenames)` for each directory in the tree
+
+- `dirpath`: String path to the directory
+- `dirnames`: List of subdirectory names
+- `filenames`: List of file names
+
+**Example:**
+
+```python
+from alphafold3.common import resources
+
+# Walk through a resource directory
+for dirpath, dirnames, filenames in resources.walk('constants'):
+    print(f"Directory: {dirpath}")
+    print(f"  Subdirectories: {dirnames}")
+    print(f"  Files: {filenames}")
+    print()
+
+# Find all Python files in a directory
+import os
+for dirpath, dirnames, filenames in resources.walk('common'):
+    for filename in filenames:
+        if filename.endswith('.py'):
+            full_path = os.path.join(dirpath, filename)
+            print(f"Found Python file: {full_path}")
+```
+
+---
+
+## Implementation Details
+
+### _DATA_ROOT
+
+```python
+_DATA_ROOT: Final[pathlib.Path] = (
+    resources.files(alphafold3.common).joinpath('..').resolve()
+)
+```
+
+Internal constant that stores the resolved root path for AlphaFold 3 data. Uses `importlib.resources` to locate the package directory and resolves the parent directory.
+
+---
+
+## Usage Examples
+
+### Loading Configuration Files
+
+```python
+from alphafold3.common import resources
+import json
+
+# Load a JSON configuration file
+with resources.open_resource('config/model_config.json', mode='r') as f:
+    config = json.load(f)
+    print(config)
+```
+
+### Loading Pickle Files
+
+```python
+from alphafold3.common import resources
+import pickle
+
+# Load a pickle file
+with resources.open_resource('data/precomputed.pkl', mode='rb') as f:
+    data = pickle.load(f)
+    print(f"Loaded data type: {type(data)}")
+```
+
+### Finding All Resource Files
+
+```python
+from alphafold3.common import resources
+import os
+
+# Find all .pickle files in the constants directory
+pickle_files = []
+for dirpath, dirnames, filenames in resources.walk('constants'):
+    for filename in filenames:
+        if filename.endswith('.pickle'):
+            full_path = os.path.join(dirpath, filename)
+            pickle_files.append(full_path)
+
+print(f"Found {len(pickle_files)} pickle files:")
+for pf in pickle_files:
+    print(f"  - {pf}")
+```
+
+### Working with Resource Directories
+
+```python
+from alphafold3.common import resources
+from pathlib import Path
+
+# Get a resource directory and list contents
+model_dir = resources.get_resource_dir('models')
+model_path = Path(model_dir)
+
+if model_path.exists():
+    print(f"Model directory: {model_dir}")
+    print(f"Contents: {list(model_path.iterdir())}")
+```
+
+### Combining with Other Utilities
+
+```python
+from alphafold3.common import resources
+from alphafold3.constants.chemical_components import Ccd
+
+# Use resources to load the CCD
+ccd_path = resources.filename('constants/converters/ccd.pickle')
+ccd = Ccd(ccd_pickle_path=ccd_path)
+
+print(f"Loaded CCD with {len(ccd)} components")
+```
+
+---
+
+## Type Hints
+
+The module uses proper type hints for better IDE support:
+
+- `Literal` types for mode parameters
+- `@typing.overload` for function overloading
+- `Final` for constants
+- `Iterator` for generator returns
+- `TextIO` and `BinaryIO` for file objects
+
+---
+
+## Best Practices
+
+1. **Use context managers** when opening resources with `open_resource()` to ensure proper file closure
+2. **Prefer `open_resource()`** over manually constructing paths with `filename()` + `open()`
+3. **Cache resource paths** if you need to access the same resource multiple times
+4. **Be aware** that `filename()` may cause package unpacking, which can be slow on the first call
+5. **Use `get_resource_dir()`** when you need to work with multiple files in the same directory

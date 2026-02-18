@@ -1,0 +1,521 @@
+---
+title: 'model.py'
+description: 'AlphaFold 3 model architecture and inference results'
+---
+
+## Overview
+
+The `model.py` module defines the core AlphaFold 3 model architecture, including the trunk (Evoformer), diffusion head, confidence head, and distogram head. It handles the complete forward pass and generates structure predictions.
+
+## Model Class
+
+Main model class that orchestrates the full prediction pipeline.
+
+```python
+class Model(hk.Module):
+    def __init__(self, config: Config, name: str = 'diffuser')
+```
+
+<ParamField path="config" type="Model.Config" required>
+  Model configuration including Evoformer, heads, and global settings.
+</ParamField>
+
+<ParamField path="name" type="str" default="diffuser">
+  Module name for Haiku.
+</ParamField>
+
+### Configuration
+
+#### Model.Config
+
+```python
+class Config(base_config.BaseConfig):
+    evoformer: evoformer_network.Evoformer.Config = base_config.autocreate()
+    global_config: model_config.GlobalConfig = base_config.autocreate()
+    heads: 'Model.HeadsConfig' = base_config.autocreate()
+    num_recycles: int = 10
+    return_embeddings: bool = False
+    return_distogram: bool = False
+```
+
+<ParamField path="evoformer" type="evoformer_network.Evoformer.Config">
+  Configuration for the Evoformer trunk (embedding module).
+</ParamField>
+
+<ParamField path="global_config" type="model_config.GlobalConfig">
+  Global configuration including precision and attention settings.
+</ParamField>
+
+<ParamField path="heads" type="Model.HeadsConfig">
+  Configuration for diffusion, confidence, and distogram heads.
+</ParamField>
+
+<ParamField path="num_recycles" type="int" default="10">
+  Number of recycling iterations through the trunk.
+</ParamField>
+
+<ParamField path="return_embeddings" type="bool" default="False">
+  Whether to return single and pair embeddings in output.
+</ParamField>
+
+<ParamField path="return_distogram" type="bool" default="False">
+  Whether to return distogram in output.
+</ParamField>
+
+#### Model.HeadsConfig
+
+```python
+class HeadsConfig(base_config.BaseConfig):
+    diffusion: diffusion_head.DiffusionHead.Config = base_config.autocreate()
+    confidence: confidence_head.ConfidenceHead.Config = base_config.autocreate()
+    distogram: distogram_head.DistogramHead.Config = base_config.autocreate()
+```
+
+### Forward Pass
+
+```python
+def __call__(
+    self, 
+    batch: features.BatchDict, 
+    key: jax.Array | None = None
+) -> ModelResult
+```
+
+<ParamField path="batch" type="features.BatchDict" required>
+  Input batch containing featurized sequences, MSAs, and templates.
+</ParamField>
+
+<ParamField path="key" type="jax.Array | None">
+  Random key for JAX operations. If None, uses `hk.next_rng_key()`.
+</ParamField>
+
+<ResponseField name="return" type="ModelResult">
+  Dictionary containing diffusion samples, confidence metrics, and optionally embeddings/distogram.
+</ResponseField>
+
+### ModelResult Structure
+
+```python
+ModelResult: TypeAlias = Mapping[str, Any]
+```
+
+The model returns a dictionary with the following keys:
+
+<ResponseField name="diffusion_samples" type="dict">
+  Contains `atom_positions` array with predicted atom coordinates.
+</ResponseField>
+
+<ResponseField name="distogram" type="dict">
+  Distance histogram predictions and contact probabilities.
+</ResponseField>
+
+<ResponseField name="predicted_lddt" type="np.ndarray">
+  Per-atom predicted local distance difference test (pLDDT) scores.
+</ResponseField>
+
+<ResponseField name="full_pae" type="np.ndarray">
+  Full predicted aligned error (PAE) matrix [num_samples, num_tokens, num_tokens].
+</ResponseField>
+
+<ResponseField name="full_pde" type="np.ndarray">
+  Full predicted distance error (PDE) matrix.
+</ResponseField>
+
+<ResponseField name="tmscore_adjusted_pae_global" type="np.ndarray">
+  TM-score adjusted PAE for global structure assessment.
+</ResponseField>
+
+<ResponseField name="tmscore_adjusted_pae_interface" type="np.ndarray">
+  TM-score adjusted PAE for interface assessment.
+</ResponseField>
+
+<ResponseField name="single_embeddings" type="jnp.ndarray" optional>
+  Single embeddings if `return_embeddings=True` [num_tokens, 384].
+</ResponseField>
+
+<ResponseField name="pair_embeddings" type="jnp.ndarray" optional>
+  Pair embeddings if `return_embeddings=True` [num_tokens, num_tokens, 128].
+</ResponseField>
+
+### Class Methods
+
+#### get_inference_result
+
+```python
+@classmethod
+def get_inference_result(
+    cls,
+    batch: features.BatchDict,
+    result: ModelResult,
+    target_name: str = '',
+) -> Iterable[InferenceResult]
+```
+
+Processes model outputs and computes inference-time metrics.
+
+<ParamField path="batch" type="features.BatchDict" required>
+  Data batch used for model inference.
+</ParamField>
+
+<ParamField path="result" type="ModelResult" required>
+  Output dict from the model's forward pass.
+</ParamField>
+
+<ParamField path="target_name" type="str" default="">
+  Target name to be saved within structure.
+</ParamField>
+
+<ResponseField name="yield" type="InferenceResult">
+  Yields one InferenceResult per diffusion sample containing predicted structure and confidence metrics.
+</ResponseField>
+
+## InferenceResult Class
+
+Postprocessed model result containing the predicted structure and all confidence metrics.
+
+```python
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class InferenceResult:
+    predicted_structure: structure.Structure
+    numerical_data: Mapping[str, float | int | np.ndarray] = dataclasses.field(
+        default_factory=dict
+    )
+    metadata: Mapping[str, float | int | np.ndarray] = dataclasses.field(
+        default_factory=dict
+    )
+    debug_outputs: Mapping[str, Any] = dataclasses.field(default_factory=dict)
+    model_id: bytes = b''
+```
+
+<ResponseField name="predicted_structure" type="structure.Structure">
+  Predicted protein structure with atom coordinates and B-factors.
+</ResponseField>
+
+<ResponseField name="numerical_data" type="Mapping[str, float | int | np.ndarray]">
+  Large numerical arrays like full PAE, PDE, and contact probabilities.
+</ResponseField>
+
+<ResponseField name="metadata" type="Mapping[str, float | int | np.ndarray]">
+  Confidence metrics and summary statistics (see Metadata Fields below).
+</ResponseField>
+
+<ResponseField name="debug_outputs" type="Mapping[str, Any]">
+  Additional debugging information.
+</ResponseField>
+
+<ResponseField name="model_id" type="bytes">
+  Model identifier from parameters.
+</ResponseField>
+
+### Metadata Fields
+
+The `metadata` dictionary contains the following confidence scores:
+
+<ResponseField name="ranking_score" type="float">
+  Primary ranking score combining pTM, ipTM, disorder, and clash penalties.
+</ResponseField>
+
+<ResponseField name="predicted_tm_score" type="float">
+  Predicted TM-score (pTM) measuring overall structure quality.
+</ResponseField>
+
+<ResponseField name="interface_predicted_tm_score" type="float">
+  Interface predicted TM-score (ipTM) for multi-chain complexes.
+</ResponseField>
+
+<ResponseField name="ptm_iptm_average" type="float">
+  Weighted average: 0.8 * ipTM + 0.2 * pTM.
+</ResponseField>
+
+<ResponseField name="ranking_confidence" type="float">
+  Ranking confidence (equals ipTM for multi-chain, pTM for single chain).
+</ResponseField>
+
+<ResponseField name="ranking_confidence_pae" type="float">
+  Alternative ranking metric based on PAE.
+</ResponseField>
+
+<ResponseField name="predicted_distance_error" type="float">
+  Average predicted distance error across structure.
+</ResponseField>
+
+<ResponseField name="fraction_disordered" type="float">
+  Fraction of structure predicted to be disordered.
+</ResponseField>
+
+<ResponseField name="has_clash" type="bool">
+  Whether structure has atomic clashes.
+</ResponseField>
+
+<ResponseField name="chain_pair_pde_mean" type="np.ndarray">
+  Mean PDE between chain pairs [num_chains, num_chains].
+</ResponseField>
+
+<ResponseField name="chain_pair_pde_min" type="np.ndarray">
+  Minimum PDE between chain pairs [num_chains, num_chains].
+</ResponseField>
+
+<ResponseField name="chain_pair_pae_min" type="np.ndarray">
+  Minimum PAE between chain pairs [num_chains, num_chains].
+</ResponseField>
+
+<ResponseField name="chain_pair_iptm" type="np.ndarray">
+  Interface pTM between chain pairs [num_chains, num_chains].
+</ResponseField>
+
+<ResponseField name="intra_chain_single_pde" type="float">
+  Average PDE within chains (intra-chain contacts).
+</ResponseField>
+
+<ResponseField name="cross_chain_single_pde" type="float">
+  Average PDE between chains (inter-chain contacts).
+</ResponseField>
+
+<ResponseField name="pae_ichain" type="np.ndarray">
+  Per-chain PAE scores [num_chains].
+</ResponseField>
+
+<ResponseField name="pae_xchain" type="np.ndarray">
+  Cross-chain PAE scores [num_chains].
+</ResponseField>
+
+<ResponseField name="iptm_ichain" type="np.ndarray">
+  Per-chain ipTM scores [num_chains].
+</ResponseField>
+
+<ResponseField name="iptm_xchain" type="np.ndarray">
+  Cross-chain ipTM scores [num_chains].
+</ResponseField>
+
+<ResponseField name="token_chain_ids" type="list[str]">
+  Chain IDs for each token.
+</ResponseField>
+
+<ResponseField name="token_res_ids" type="np.ndarray">
+  Residue IDs for each token.
+</ResponseField>
+
+### Numerical Data Fields
+
+The `numerical_data` dictionary contains large arrays:
+
+<ResponseField name="full_pde" type="np.ndarray">
+  Full predicted distance error matrix [num_tokens, num_tokens].
+</ResponseField>
+
+<ResponseField name="full_pae" type="np.ndarray">
+  Full predicted aligned error matrix [num_tokens, num_tokens].
+</ResponseField>
+
+<ResponseField name="contact_probs" type="np.ndarray">
+  Contact probability matrix [num_tokens, num_tokens].
+</ResponseField>
+
+## Helper Functions
+
+### get_predicted_structure
+
+```python
+def get_predicted_structure(
+    result: ModelResult, 
+    batch: feat_batch.Batch
+) -> structure.Structure
+```
+
+Creates the predicted structure from model outputs.
+
+<ParamField path="result" type="ModelResult" required>
+  Model output in model-specific layout.
+</ParamField>
+
+<ParamField path="batch" type="feat_batch.Batch" required>
+  Model input batch for layout conversion.
+</ParamField>
+
+<ResponseField name="return" type="structure.Structure">
+  Predicted structure with atom coordinates and B-factors.
+</ResponseField>
+
+### create_target_feat_embedding
+
+```python
+def create_target_feat_embedding(
+    batch: feat_batch.Batch,
+    config: evoformer_network.Evoformer.Config,
+    global_config: model_config.GlobalConfig,
+) -> jnp.ndarray
+```
+
+Creates target feature embedding for the Evoformer.
+
+<ParamField path="batch" type="feat_batch.Batch" required>
+  Input batch data.
+</ParamField>
+
+<ParamField path="config" type="evoformer_network.Evoformer.Config" required>
+  Evoformer configuration.
+</ParamField>
+
+<ParamField path="global_config" type="model_config.GlobalConfig" required>
+  Global model configuration.
+</ParamField>
+
+<ResponseField name="return" type="jnp.ndarray">
+  Target feature embeddings [num_tokens, feature_dim].
+</ResponseField>
+
+## Usage Examples
+
+### Basic Model Inference
+
+```python
+import jax
+from alphafold3.model import model, features
+from alphafold3.model import params
+import haiku as hk
+
+# Load model configuration
+config = model.Model.Config()
+config.num_recycles = 10
+config.heads.diffusion.eval.num_samples = 5
+
+# Create model
+def forward_fn(batch):
+    return model.Model(config)(batch)
+
+model_fn = hk.transform(forward_fn)
+
+# Load parameters
+model_params = params.get_model_haiku_params(model_dir='/path/to/models')
+
+# Run inference
+rng_key = jax.random.PRNGKey(42)
+result = model_fn.apply(model_params, rng_key, batch)
+```
+
+### Processing Results
+
+```python
+# Extract inference results
+inference_results = list(
+    model.Model.get_inference_result(
+        batch=batch,
+        result=result,
+        target_name='my_protein'
+    )
+)
+
+# Access first sample
+first_result = inference_results[0]
+print(f"Ranking score: {first_result.metadata['ranking_score']}")
+print(f"pTM: {first_result.metadata['predicted_tm_score']}")
+print(f"Has clash: {first_result.metadata['has_clash']}")
+
+# Save structure
+first_result.predicted_structure.save_to_mmcif('output.cif')
+```
+
+### Accessing Confidence Metrics
+
+```python
+# Get confidence matrices
+pae = first_result.numerical_data['full_pae']
+pde = first_result.numerical_data['full_pde']
+contacts = first_result.numerical_data['contact_probs']
+
+# Chain-level metrics
+chain_pair_iptm = first_result.metadata['chain_pair_iptm']
+print(f"Chain pair interface scores:\n{chain_pair_iptm}")
+
+# Overall quality
+ranking_score = first_result.metadata['ranking_score']
+fraction_disordered = first_result.metadata['fraction_disordered']
+print(f"Quality: {ranking_score:.3f}, Disorder: {fraction_disordered:.3f}")
+```
+
+### Multi-Sample Analysis
+
+```python
+# Compare all samples by ranking score
+samples = sorted(
+    inference_results,
+    key=lambda x: x.metadata['ranking_score'],
+    reverse=True
+)
+
+best_sample = samples[0]
+print(f"Best sample ranking score: {best_sample.metadata['ranking_score']}")
+
+# Ensemble metrics
+ptm_scores = [s.metadata['predicted_tm_score'] for s in samples]
+print(f"pTM mean: {np.mean(ptm_scores):.3f}, std: {np.std(ptm_scores):.3f}")
+```
+
+### With Embeddings
+
+```python
+# Configure model to return embeddings
+config.return_embeddings = True
+config.return_distogram = True
+
+# Run inference
+result = model_fn.apply(model_params, rng_key, batch)
+
+# Access embeddings
+single_emb = result['single_embeddings']  # [num_tokens, 384]
+pair_emb = result['pair_embeddings']      # [num_tokens, num_tokens, 128]
+distogram = result['distogram']['distogram']  # [num_tokens, num_tokens, 64]
+
+print(f"Single embedding shape: {single_emb.shape}")
+print(f"Pair embedding shape: {pair_emb.shape}")
+```
+
+## Architecture Overview
+
+The Model consists of:
+
+1. **Evoformer (Trunk)**: Processes MSA and creates single/pair embeddings through multiple recycling iterations
+2. **Diffusion Head**: Generates atom coordinates through denoising diffusion process
+3. **Confidence Head**: Predicts pLDDT, PAE, and PDE confidence metrics
+4. **Distogram Head**: Predicts distance histograms and contact probabilities
+
+### Forward Pass Flow
+
+```python
+# Simplified forward pass
+def __call__(batch):
+    # 1. Create target features
+    target_feat = create_target_feat_embedding(batch, config, global_config)
+    
+    # 2. Run recycling through Evoformer trunk
+    for i in range(num_recycles + 1):
+        embeddings = evoformer(batch, prev_embeddings, target_feat)
+    
+    # 3. Sample diffusion (generates atom coordinates)
+    samples = diffusion_head(batch, embeddings)
+    
+    # 4. Compute confidence metrics
+    confidence_output = confidence_head(samples, embeddings)
+    
+    # 5. Compute distogram
+    distogram = distogram_head(batch, embeddings)
+    
+    return {
+        'diffusion_samples': samples,
+        'distogram': distogram,
+        **confidence_output
+    }
+```
+
+## Performance Considerations
+
+- **Recycling**: More recycles (10-20) improve quality but increase compute time
+- **Diffusion Samples**: More samples (5-10) provide better coverage but are slower
+- **Embeddings**: Enabling embeddings significantly increases memory usage
+- **Flash Attention**: Use `triton` or `cudnn` for best performance on Ampere+ GPUs
+
+## See Also
+
+- [run_alphafold.py](/api/run-alphafold) - Main prediction script
+- [Input Dataclass](/api/folding-input) - Input format specification
+- [DataPipeline](/api/pipeline) - MSA and template processing

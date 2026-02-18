@@ -1,0 +1,551 @@
+---
+title: 'pipeline.py'
+description: 'Data pipeline for MSA generation and template search'
+---
+
+## Overview
+
+The `pipeline.py` module runs MSA (Multiple Sequence Alignment) generation and template search tools for AlphaFold 3. It processes protein and RNA chains to generate evolutionary information and structural templates needed for structure prediction.
+
+## DataPipeline Class
+
+Main class that orchestrates MSA generation and template search.
+
+```python
+class DataPipeline:
+    def __init__(self, data_pipeline_config: DataPipelineConfig)
+```
+
+<ParamField path="data_pipeline_config" type="DataPipelineConfig" required>
+  Configuration specifying database paths, binary paths, and search parameters.
+</ParamField>
+
+### Methods
+
+#### process
+
+Main method to process a fold input through the data pipeline.
+
+```python
+def process(
+    self, 
+    fold_input: folding_input.Input
+) -> folding_input.Input
+```
+
+<ParamField path="fold_input" type="folding_input.Input" required>
+  Input containing chains to process. MSA and template fields should be None or empty.
+</ParamField>
+
+<ResponseField name="return" type="folding_input.Input">
+  New Input with MSAs and templates populated for all chains.
+</ResponseField>
+
+**Processing Logic:**
+- Protein chains: Runs Jackhmmer for MSA, Hmmsearch for templates
+- RNA chains: Runs Nhmmer for MSA
+- DNA chains: No processing (passed through)
+- Ligands: No processing (passed through)
+
+#### process_protein_chain
+
+```python
+def process_protein_chain(
+    self, 
+    chain: folding_input.ProteinChain
+) -> folding_input.ProteinChain
+```
+
+Processes a single protein chain to generate MSAs and templates.
+
+<ParamField path="chain" type="folding_input.ProteinChain" required>
+  Protein chain to process.
+</ParamField>
+
+<ResponseField name="return" type="folding_input.ProteinChain">
+  Protein chain with populated `unpaired_msa`, `paired_msa`, and `templates` fields.
+</ResponseField>
+
+**MSA Generation:**
+- UniRef90: 10,000 sequences max, e-value 1e-4
+- Mgnify: 5,000 sequences max, e-value 1e-4  
+- Small BFD: 5,000 sequences max, e-value 1e-4
+- UniProt (paired): 50,000 sequences max, e-value 1e-4
+
+**Template Search:**
+- Searches PDB using Hmmsearch with e-value 100
+- Filters to max 4 templates by date and quality
+- Returns templates with structures and alignments
+
+#### process_rna_chain
+
+```python
+def process_rna_chain(
+    self, 
+    chain: folding_input.RnaChain
+) -> folding_input.RnaChain
+```
+
+Processes a single RNA chain to generate MSAs.
+
+<ParamField path="chain" type="folding_input.RnaChain" required>
+  RNA chain to process.
+</ParamField>
+
+<ResponseField name="return" type="folding_input.RnaChain">
+  RNA chain with populated `unpaired_msa` field.
+</ResponseField>
+
+**MSA Generation:**
+- NT-RNA: 10,000 sequences max, e-value 1e-3
+- Rfam: 10,000 sequences max, e-value 1e-3
+- RNAcentral: 10,000 sequences max, e-value 1e-3
+
+## DataPipelineConfig
+
+Configuration dataclass specifying all pipeline settings.
+
+```python
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class DataPipelineConfig:
+    # Binary paths
+    jackhmmer_binary_path: str
+    nhmmer_binary_path: str
+    hmmalign_binary_path: str
+    hmmsearch_binary_path: str
+    hmmbuild_binary_path: str
+    
+    # Database paths
+    small_bfd_database_path: str
+    mgnify_database_path: str
+    uniprot_cluster_annot_database_path: str
+    uniref90_database_path: str
+    ntrna_database_path: str
+    rfam_database_path: str
+    rna_central_database_path: str
+    seqres_database_path: str
+    pdb_database_path: str
+    
+    # Optional Z-values for sharded databases
+    small_bfd_z_value: int | None = None
+    mgnify_z_value: int | None = None
+    uniprot_cluster_annot_z_value: int | None = None
+    uniref90_z_value: int | None = None
+    ntrna_z_value: int | None = None
+    rfam_z_value: int | None = None
+    rna_central_z_value: int | None = None
+    
+    # CPU configuration
+    jackhmmer_n_cpu: int = 8
+    jackhmmer_max_parallel_shards: int | None = None
+    nhmmer_n_cpu: int = 8
+    nhmmer_max_parallel_shards: int | None = None
+    
+    # Template search
+    max_template_date: datetime.date
+```
+
+### Binary Paths
+
+<ParamField path="jackhmmer_binary_path" type="str" required>
+  Path to Jackhmmer binary for protein MSA search.
+</ParamField>
+
+<ParamField path="nhmmer_binary_path" type="str" required>
+  Path to Nhmmer binary for RNA MSA search.
+</ParamField>
+
+<ParamField path="hmmalign_binary_path" type="str" required>
+  Path to Hmmalign binary for aligning hits to query profile.
+</ParamField>
+
+<ParamField path="hmmsearch_binary_path" type="str" required>
+  Path to Hmmsearch binary for template search.
+</ParamField>
+
+<ParamField path="hmmbuild_binary_path" type="str" required>
+  Path to Hmmbuild binary for building HMM profiles.
+</ParamField>
+
+### Database Paths
+
+<ParamField path="small_bfd_database_path" type="str" required>
+  Small BFD database path for protein MSA search.
+</ParamField>
+
+<ParamField path="mgnify_database_path" type="str" required>
+  Mgnify database path for protein MSA search.
+</ParamField>
+
+<ParamField path="uniprot_cluster_annot_database_path" type="str" required>
+  UniProt database path for protein paired MSA search.
+</ParamField>
+
+<ParamField path="uniref90_database_path" type="str" required>
+  UniRef90 database path for MSA and template profile construction.
+</ParamField>
+
+<ParamField path="ntrna_database_path" type="str" required>
+  NT-RNA database path for RNA MSA search.
+</ParamField>
+
+<ParamField path="rfam_database_path" type="str" required>
+  Rfam database path for RNA MSA search.
+</ParamField>
+
+<ParamField path="rna_central_database_path" type="str" required>
+  RNAcentral database path for RNA MSA search.
+</ParamField>
+
+<ParamField path="seqres_database_path" type="str" required>
+  PDB sequence database path for template search.
+</ParamField>
+
+<ParamField path="pdb_database_path" type="str" required>
+  PDB mmCIF files directory for template structures.
+</ParamField>
+
+### Z-values
+
+Z-values represent database sizes for E-value calculation and must be set for sharded databases.
+
+<ParamField path="small_bfd_z_value" type="int | None">
+  Database size in number of sequences for Small BFD.
+</ParamField>
+
+<ParamField path="mgnify_z_value" type="int | None">
+  Database size in number of sequences for Mgnify.
+</ParamField>
+
+<ParamField path="uniprot_cluster_annot_z_value" type="int | None">
+  Database size in number of sequences for UniProt.
+</ParamField>
+
+<ParamField path="uniref90_z_value" type="int | None">
+  Database size in number of sequences for UniRef90.
+</ParamField>
+
+<ParamField path="ntrna_z_value" type="int | None">
+  Database size in megabases for NT-RNA.
+</ParamField>
+
+<ParamField path="rfam_z_value" type="int | None">
+  Database size in megabases for Rfam.
+</ParamField>
+
+<ParamField path="rna_central_z_value" type="int | None">
+  Database size in megabases for RNAcentral.
+</ParamField>
+
+### CPU Configuration
+
+<ParamField path="jackhmmer_n_cpu" type="int" default="8">
+  Number of CPUs for Jackhmmer. Going above 8 provides diminishing returns.
+</ParamField>
+
+<ParamField path="jackhmmer_max_parallel_shards" type="int | None">
+  Maximum parallel shards for Jackhmmer. If None, one instance per shard.
+</ParamField>
+
+<ParamField path="nhmmer_n_cpu" type="int" default="8">
+  Number of CPUs for Nhmmer. Going above 8 provides diminishing returns.
+</ParamField>
+
+<ParamField path="nhmmer_max_parallel_shards" type="int | None">
+  Maximum parallel shards for Nhmmer. If None, one instance per shard.
+</ParamField>
+
+### Template Configuration
+
+<ParamField path="max_template_date" type="datetime.date" required>
+  Latest allowed template release date. Templates after this date are filtered out.
+</ParamField>
+
+## Internal Functions
+
+### _get_protein_msa_and_templates
+
+Cached function to avoid re-running MSA tools for identical sequences in homomers.
+
+```python
+@functools.cache
+def _get_protein_msa_and_templates(
+    sequence: str,
+    run_template_search: bool,
+    uniref90_msa_config: msa_config.RunConfig,
+    mgnify_msa_config: msa_config.RunConfig,
+    small_bfd_msa_config: msa_config.RunConfig,
+    uniprot_msa_config: msa_config.RunConfig,
+    templates_config: msa_config.TemplatesConfig,
+    pdb_database_path: str,
+) -> tuple[msa.Msa, msa.Msa, templates_lib.Templates]
+```
+
+Returns unpaired MSA, paired MSA, and templates for a protein sequence.
+
+### _get_protein_templates
+
+Cached function for template search only.
+
+```python
+@functools.cache
+def _get_protein_templates(
+    sequence: str,
+    input_msa_a3m: str,
+    run_template_search: bool,
+    templates_config: msa_config.TemplatesConfig,
+    pdb_database_path: str,
+) -> templates_lib.Templates
+```
+
+Searches for templates using provided MSA.
+
+### _get_rna_msa
+
+Cached function for RNA MSA generation.
+
+```python
+@functools.cache
+def _get_rna_msa(
+    sequence: str,
+    nt_rna_msa_config: msa_config.NhmmerConfig,
+    rfam_msa_config: msa_config.NhmmerConfig,
+    rnacentral_msa_config: msa_config.NhmmerConfig,
+) -> msa.Msa
+```
+
+Generates and deduplicates RNA MSA from three databases.
+
+## Usage Examples
+
+### Basic Pipeline Usage
+
+```python
+import datetime
+from alphafold3.data import pipeline
+from alphafold3.common import folding_input
+
+# Create configuration
+config = pipeline.DataPipelineConfig(
+    # Binary paths
+    jackhmmer_binary_path='/usr/bin/jackhmmer',
+    nhmmer_binary_path='/usr/bin/nhmmer',
+    hmmalign_binary_path='/usr/bin/hmmalign',
+    hmmsearch_binary_path='/usr/bin/hmmsearch',
+    hmmbuild_binary_path='/usr/bin/hmmbuild',
+    
+    # Database paths
+    small_bfd_database_path='/databases/bfd/bfd.fasta',
+    mgnify_database_path='/databases/mgnify/mgy_clusters.fa',
+    uniprot_cluster_annot_database_path='/databases/uniprot/uniprot.fa',
+    uniref90_database_path='/databases/uniref90/uniref90.fa',
+    ntrna_database_path='/databases/ntrna/nt_rna.fasta',
+    rfam_database_path='/databases/rfam/rfam.fasta',
+    rna_central_database_path='/databases/rnacentral/rnacentral.fasta',
+    seqres_database_path='/databases/pdb/seqres.fasta',
+    pdb_database_path='/databases/pdb/mmcif_files',
+    
+    # Settings
+    jackhmmer_n_cpu=8,
+    nhmmer_n_cpu=8,
+    max_template_date=datetime.date(2021, 9, 30),
+)
+
+# Initialize pipeline
+data_pipeline = pipeline.DataPipeline(config)
+
+# Create input
+protein = folding_input.ProteinChain(
+    id='A',
+    sequence='MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA',
+    ptms=[]
+)
+
+fold_input = folding_input.Input(
+    name='my_protein',
+    chains=[protein],
+    rng_seeds=[42]
+)
+
+# Run pipeline
+processed_input = data_pipeline.process(fold_input)
+
+# Access results
+processed_chain = processed_input.protein_chains[0]
+print(f"Unpaired MSA depth: {processed_chain.unpaired_msa.count('>')}")
+print(f"Paired MSA depth: {processed_chain.paired_msa.count('>')}")
+print(f"Templates found: {len(processed_chain.templates)}")
+```
+
+### Processing Individual Chains
+
+```python
+# Process only protein chain
+protein_chain = folding_input.ProteinChain(
+    id='A',
+    sequence='MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA',
+    ptms=[]
+)
+
+processed_protein = data_pipeline.process_protein_chain(protein_chain)
+
+# Process only RNA chain
+rna_chain = folding_input.RnaChain(
+    id='B',
+    sequence='GGGGCUAUAGCUCAGCGGUAGAGCAGUGGAUUGAAAUCCAUUGUGUCGCUGGUUCGAUUCCGGUUAGUCUCCA',
+    modifications=[]
+)
+
+processed_rna = data_pipeline.process_rna_chain(rna_chain)
+```
+
+### Custom MSA (Skip Pipeline)
+
+```python
+# Provide custom MSA to skip pipeline
+protein_with_msa = folding_input.ProteinChain(
+    id='A',
+    sequence='MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA',
+    ptms=[],
+    unpaired_msa='>query\nMKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA\n>seq1\nMKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA\n',
+    paired_msa='',  # Empty paired MSA
+    templates=[]     # No templates
+)
+
+# Pipeline will skip this chain
+fold_input = folding_input.Input(
+    name='custom_msa',
+    chains=[protein_with_msa],
+    rng_seeds=[42]
+)
+
+# No processing will occur
+processed = data_pipeline.process(fold_input)
+```
+
+### Multi-Chain Complex
+
+```python
+# Create complex with protein and RNA
+protein = folding_input.ProteinChain(
+    id='A',
+    sequence='MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA',
+    ptms=[]
+)
+
+rna = folding_input.RnaChain(
+    id='B',
+    sequence='GGGGCUAUAGCUCAGCGGUAGAGCAGUGGAUUGAAAUCCAUUGUGUCGCUGGUUCGAUUCCGGUUAGUCUCCA',
+    modifications=[]
+)
+
+ligand = folding_input.Ligand(
+    id='C',
+    ccd_ids=['ATP']
+)
+
+fold_input = folding_input.Input(
+    name='complex',
+    chains=[protein, rna, ligand],
+    rng_seeds=[42]
+)
+
+# Pipeline processes protein and RNA, passes through ligand
+processed = data_pipeline.process(fold_input)
+```
+
+### Sharded Database Configuration
+
+```python
+# For sharded databases, specify Z-values
+config = pipeline.DataPipelineConfig(
+    # ... other paths ...
+    
+    # Sharded database with Z-value
+    small_bfd_database_path='/databases/bfd/bfd_{000..049}.fasta',
+    small_bfd_z_value=138_515_945,  # Total sequences across all shards
+    
+    uniref90_database_path='/databases/uniref90/uniref90_{000..019}.fasta',
+    uniref90_z_value=103_000_000,
+    
+    # Parallel shard processing
+    jackhmmer_max_parallel_shards=4,  # Process 4 shards at once
+    
+    max_template_date=datetime.date(2021, 9, 30),
+)
+```
+
+## MSA Format
+
+MSAs are returned in A3M format:
+
+```
+>query
+MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA
+>seq1/1-39
+MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA
+>seq2/1-39
+MKFLK-SLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA
+>seq3/1-39
+mkflkfslltavllsvvfafsscgddddtypydvpdya
+```
+
+- First sequence is query (uppercase, no gaps)
+- Subsequent sequences are hits (lowercase = insertion, `-` = deletion)
+- Headers include sequence ID and alignment range
+
+## Template Format
+
+Templates are returned as `folding_input.Template` objects:
+
+```python
+template = folding_input.Template(
+    mmcif='<mmCIF string>',
+    query_to_template_map={
+        1: 10,   # Query residue 1 -> Template residue 10
+        2: 11,   # Query residue 2 -> Template residue 11
+        3: 12,   # Query residue 3 -> Template residue 12
+        # ... etc
+    }
+)
+```
+
+## Performance Considerations
+
+### Caching
+
+Functions are decorated with `@functools.cache` to avoid redundant searches:
+- Identical sequences in homomers are processed only once
+- Cache is per-Python-process (not persistent across runs)
+
+### Parallelization
+
+MSA tools run in parallel using `ThreadPoolExecutor`:
+- 4 protein databases searched simultaneously
+- 3 RNA databases searched simultaneously
+- Template search can run concurrently with MSA
+
+### Timing
+
+Typical processing times (8 CPUs):
+- Protein MSA: 5-30 minutes depending on databases
+- RNA MSA: 3-15 minutes depending on databases
+- Template search: 1-5 minutes
+- Total for protein: 10-35 minutes
+
+### Database Sizes
+
+Recommended database sizes (2021-2022 versions):
+- Small BFD: ~138M sequences, ~2.5 TB
+- Mgnify: ~125M sequences, ~120 GB
+- UniRef90: ~103M sequences, ~35 GB
+- UniProt: ~224M sequences, ~80 GB
+- NT-RNA: ~47 MB
+- Rfam: ~13 MB
+- RNAcentral: ~42 MB
+
+## See Also
+
+- [run_alphafold.py](/api/run-alphafold) - Main prediction script
+- [Input Dataclass](/api/folding-input) - Input format
+- [Model Class](/api/model) - Model inference

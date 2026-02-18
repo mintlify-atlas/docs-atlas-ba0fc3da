@@ -1,0 +1,350 @@
+---
+title: Providing Custom MSA Data
+description: Learn how to provide custom Multiple Sequence Alignments for protein and RNA chains in AlphaFold 3
+---
+
+# Providing Custom MSA Data
+
+AlphaFold 3 allows you to provide custom Multiple Sequence Alignments (MSA) for protein and RNA chains. This is useful when you want to use pre-computed MSAs or run MSA-free predictions.
+
+## Overview
+
+If custom MSAs are not provided, AlphaFold 3 automatically builds MSAs for protein and RNA entities using Jackhmmer/Nhmmer search over genetic databases. You can override this behavior by specifying custom MSAs in the input JSON.
+
+<Info>
+Custom MSAs must be provided in **A3M format**, which is equivalent to FASTA format but also allows:
+- Lowercase characters denoting inserted residues
+- Hyphens (`-`) denoting gaps in sequences
+</Info>
+
+## Protein MSA
+
+Protein chains support two types of MSA: `unpairedMsa` and `pairedMsa`.
+
+### Valid Combinations
+
+<Steps>
+
+<Step title="Default: Automatic MSA Generation">
+Both `unpairedMsa` and `pairedMsa` fields are unset (or set to `null`). AlphaFold 3 will build both MSAs automatically.
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS"
+  }
+}
+```
+
+This is the **recommended option** for most cases.
+</Step>
+
+<Step title="Custom Unpaired MSA Only">
+Set `unpairedMsa` to a non-empty A3M string and `pairedMsa` to an empty string (`""`).
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS",
+    "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n>hit1\nMQIFVKTL-GKTITLEVEPS\n>hit2\nMQIFVKTLTGKTI-LEVEPS",
+    "pairedMsa": ""
+  }
+}
+```
+</Step>
+
+<Step title="MSA-Free Prediction">
+Set both `unpairedMsa` and `pairedMsa` to empty strings (`""`).
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS",
+    "unpairedMsa": "",
+    "pairedMsa": ""
+  }
+}
+```
+
+The model will use only the query sequence without any MSA information.
+</Step>
+
+<Step title="Both Custom MSAs (Expert Mode)">
+Set both `unpairedMsa` and `pairedMsa` to custom non-empty A3M strings.
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS",
+    "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n>hit1\nMQIFVKTL-GKTITLEVEPS",
+    "pairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n>paired_hit\nMQIFVKTLTGKTITLEVEPS"
+  }
+}
+```
+
+This is considered an **expert option**.
+</Step>
+
+</Steps>
+
+<Warning>
+Both `unpairedMsa` and `pairedMsa` must be **either both set or both unset**. You cannot set one and leave the other as `null`.
+</Warning>
+
+## RNA MSA
+
+RNA chains support only `unpairedMsa`.
+
+### Valid Options
+
+<Tabs>
+  <Tab title="Automatic (Recommended)">
+  Leave `unpairedMsa` unset or explicitly set to `null`.
+
+  ```json
+  {
+    "rna": {
+      "id": "B",
+      "sequence": "AGCUAGCU"
+    }
+  }
+  ```
+
+  AlphaFold 3 will build MSA automatically using Nhmmer.
+  </Tab>
+
+  <Tab title="MSA-Free">
+  Set `unpairedMsa` to an empty string (`""`).
+
+  ```json
+  {
+    "rna": {
+      "id": "B",
+      "sequence": "AGCUAGCU",
+      "unpairedMsa": ""
+    }
+  }
+  ```
+
+  The model will run without MSA for this RNA chain.
+  </Tab>
+
+  <Tab title="Custom MSA">
+  Set `unpairedMsa` to a non-empty A3M string.
+
+  ```json
+  {
+    "rna": {
+      "id": "B",
+      "sequence": "AGCUAGCU",
+      "unpairedMsa": ">query\nAGCUAGCU\n>hit1\nAGCU-GCU\n>hit2\nAGCUAGCU"
+    }
+  }
+  ```
+  </Tab>
+</Tabs>
+
+## Using External MSA Files
+
+Instead of embedding MSA data inline, you can reference external files using path fields.
+
+### Protein MSA Paths
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS",
+    "unpairedMsaPath": "path/to/unpaired.a3m",
+    "pairedMsaPath": "path/to/paired.a3m"
+  }
+}
+```
+
+### RNA MSA Path
+
+```json
+{
+  "rna": {
+    "id": "B",
+    "sequence": "AGCUAGCU",
+    "unpairedMsaPath": "path/to/rna_msa.a3m"
+  }
+}
+```
+
+<Info>
+Paths can be:
+- **Absolute paths**: `/home/user/data/msa.a3m`
+- **Relative to the input JSON**: `../msas/msa.a3m`
+
+Supported compression formats:
+- Plain text (`.a3m`)
+- gzip (`.a3m.gz`)
+- xz (`.a3m.xz`)
+- zstd (`.a3m.zst`)
+</Info>
+
+<Warning>
+You cannot use both inline MSA and path fields simultaneously:
+- `unpairedMsa` and `unpairedMsaPath` are mutually exclusive
+- `pairedMsa` and `pairedMsaPath` are mutually exclusive
+</Warning>
+
+## A3M Format Requirements
+
+When providing custom MSAs, ensure they meet these requirements:
+
+<Steps>
+
+<Step title="Valid A3M Format">
+The MSA must follow A3M/FASTA format with support for:
+- Uppercase letters for aligned residues
+- Lowercase letters for inserted residues
+- Hyphens (`-`) for gaps
+</Step>
+
+<Step title="Query Sequence First">
+The **first sequence** must be exactly equal to the query sequence.
+
+```text
+>query
+MQIFVKTLTGKTITLEVEPS
+>hit1
+MQIFVKTL-GKTITLEVEPS
+```
+</Step>
+
+<Step title="Rectangular Alignment">
+After removing all insertions (lowercase letters), all sequences must have exactly the same length as the query.
+
+```text
+>query
+MQIF
+>hit1 (with insertion)
+MQabIF  → After removing insertions: MQIF ✓
+>hit2 (with gap)
+MQ-F    → Same length as query ✓
+```
+</Step>
+
+</Steps>
+
+## MSA Pairing for Multimers
+
+<Warning>
+For multimer predictions, we **recommend using only `unpairedMsa`** and manually performing MSA pairing before providing it to AlphaFold 3.
+</Warning>
+
+When folding multiple chains, MSA pairing ensures that sequences from the same organism appear in the same row across chains.
+
+### Manual Pairing Example
+
+For two chains `DEEP` and `MIND`, manually pair sequences from organisms A and C:
+
+<CodeGroup>
+
+```text Chain A (DEEP)
+>query
+DEEP
+>match1_organism_A
+D--P
+>match2_organism_B
+DD-P
+>match3_organism_C
+DD-P
+```
+
+```text Chain B (MIND)
+>query
+MIND
+>match1_organism_A
+M--D
+>empty_placeholder
+----
+>match2_organism_C
+MIN-
+```
+
+</CodeGroup>
+
+The resulting concatenated MSA will properly pair sequences:
+
+```text
+>query
+DEEPMIND
+>organism_A
+D--PM--D
+>organism_B (no match in chain B)
+DD-P----
+>organism_C
+DD-PMIN-
+```
+
+<Info>
+When using manually paired MSAs, run with:
+
+```bash
+python run_alphafold.py \
+  --json_path=input.json \
+  --resolve_msa_overlaps=false
+```
+
+This prevents deduplication that could destroy your carefully crafted sequence positioning.
+</Info>
+
+## Complete Example
+
+```json
+{
+  "name": "Custom MSA Example",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTLTGKTITLEVEPS",
+        "description": "Protein with custom MSA, template-free",
+        "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n>hit1\nMQIFVKTL-GKTITLEVEPS\n>hit2\nMQIFVKTLTGKTI-LEVEPS",
+        "pairedMsa": "",
+        "templates": []
+      }
+    },
+    {
+      "rna": {
+        "id": "B",
+        "sequence": "AGCUAGCU",
+        "description": "RNA with custom MSA from file",
+        "unpairedMsaPath": "data/rna_msa.a3m"
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+## References
+
+From `folding_input.py:156-165`:
+```python
+paired_msa: str | None = None
+unpaired_msa: str | None = None
+# If None, this field is unset and must be filled in by
+# the data pipeline before featurisation.
+# If set to an empty string, it will be treated as a
+# custom MSA with no sequences.
+```
+
+From `folding_input.py:471-475`:
+```python
+unpaired_msa: str | None = None
+# If None, this field is unset and must be filled in by
+# the data pipeline before featurisation.
+# If set to an empty string, it will be treated as a
+# custom MSA with no sequences.
+```

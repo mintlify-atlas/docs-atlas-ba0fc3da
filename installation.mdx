@@ -1,0 +1,416 @@
+---
+title: Installation Guide
+description: Complete installation instructions for AlphaFold 3 including Docker, GPU drivers, and genetic databases
+---
+
+# Installation and Setup
+
+This guide covers the complete installation process for AlphaFold 3 on Linux with NVIDIA GPUs.
+
+<Warning>
+  AlphaFold 3 requires Linux and does not support other operating systems. Full installation requires up to 1 TB of disk space for genetic databases (SSD storage is recommended).
+</Warning>
+
+## System Requirements
+
+### Hardware Requirements
+
+- **OS**: Linux (Ubuntu 22.04 LTS verified)
+- **GPU**: NVIDIA GPU with Compute Capability 8.0 or greater
+  - NVIDIA A100 80 GB (officially supported)
+  - NVIDIA H100 80 GB (officially supported)
+  - A100 40 GB supported with configuration changes
+- **RAM**: 64 GB minimum (more recommended for deep MSAs)
+- **Storage**: Up to 1 TB for genetic databases (SSD recommended)
+- **CUDA**: Version 12.6 or higher
+
+### Supported Input Sizes
+
+<Info>
+  We have verified that inputs with up to **5,120 tokens** can fit on a single NVIDIA A100 80 GB or H100 80 GB. Numerical accuracy has been verified on both GPU types.
+</Info>
+
+## Installation Steps Overview
+
+<Steps>
+  <Step title="Provision a Linux machine">
+    Set up Ubuntu 22.04 LTS with NVIDIA GPU
+  </Step>
+  <Step title="Install Docker">
+    Install and configure rootless Docker
+  </Step>
+  <Step title="Install NVIDIA drivers">
+    Set up GPU drivers and container toolkit
+  </Step>
+  <Step title="Download AlphaFold 3 source">
+    Clone the GitHub repository
+  </Step>
+  <Step title="Obtain genetic databases">
+    Download ~630 GB of sequence databases
+  </Step>
+  <Step title="Request model parameters">
+    Get access to AlphaFold 3 weights
+  </Step>
+  <Step title="Build Docker container">
+    Create the AlphaFold 3 container image
+  </Step>
+</Steps>
+
+## 1. Provisioning a Machine
+
+Clean Ubuntu images are available on Google Cloud, AWS, Azure, and other major platforms.
+
+### Example: Google Cloud Setup
+
+Using an existing Google Cloud project:
+
+```bash
+gcloud compute instances create alphafold3 \
+    --machine-type a2-ultragpu-1g \
+    --zone us-central1-a \
+    --image-family ubuntu-2204-lts \
+    --image-project ubuntu-os-cloud \
+    --maintenance-policy TERMINATE \
+    --boot-disk-size 1000 \
+    --boot-disk-type pd-balanced
+```
+
+<Tip>
+  You can use `a2-highgpu-1g` for smaller predictions. Adjust the `--zone` parameter based on your quota and availability.
+</Tip>
+
+This provisions an Ubuntu 22.04 LTS image with:
+- 12 CPUs
+- 170 GB RAM
+- 1 TB disk
+- NVIDIA A100 80 GB GPU
+
+## 2. Installing Docker
+
+These instructions are for rootless Docker on Ubuntu 22.04 LTS.
+
+### Add Docker's Official GPG Key
+
+```bash
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+```
+
+### Add Docker Repository
+
+```bash
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+### Verify Docker Installation
+
+```bash
+sudo docker run hello-world
+```
+
+### Enable Rootless Docker
+
+```bash
+sudo apt-get install -y uidmap systemd-container
+
+sudo machinectl shell $(whoami)@ /bin/bash -c 'dockerd-rootless-setuptool.sh install && sudo loginctl enable-linger $(whoami) && DOCKER_HOST=unix:///run/user/1001/docker.sock docker context use rootless'
+```
+
+## 3. Installing GPU Support
+
+### Install NVIDIA Drivers
+
+```bash
+sudo apt-get -y install alsa-utils ubuntu-drivers-common
+sudo ubuntu-drivers install
+
+sudo nvidia-smi --gpu-reset
+
+nvidia-smi  # Check that the drivers are installed
+```
+
+<Warning>
+  If you see "NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver", reboot the instance with `sudo reboot now`.
+</Warning>
+
+Expected output from `nvidia-smi`:
+
+```text
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.120                Driver Version: 550.120        CUDA Version: 12.6     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-80GB          Off |   00000000:00:05.0 Off |                    0 |
+| N/A   34C    P0             51W /  400W |       1MiB /  81920MiB |      0%      Default |
++-----------------------------------------------------------------------------------------+
+```
+
+### Install NVIDIA Container Toolkit
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json
+systemctl --user restart docker
+sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place
+```
+
+### Verify GPU Access in Docker
+
+```bash
+docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi
+```
+
+If this command shows GPU information, your setup is working correctly.
+
+## 4. Obtaining AlphaFold 3 Source Code
+
+Install git and clone the repository:
+
+```bash
+git clone https://github.com/google-deepmind/alphafold3.git
+cd alphafold3
+```
+
+## 5. Obtaining Genetic Databases
+
+<Note>
+  This step requires `wget` and `zstd`. Install them with:
+  ```bash
+  sudo apt install wget zstd
+  ```
+</Note>
+
+### Download All Databases
+
+AlphaFold 3 requires multiple genetic databases:
+
+- **BFD** (small version)
+- **MGnify**
+- **PDB** (structures in mmCIF format)
+- **PDB seqres**
+- **UniProt**
+- **UniRef90**
+- **NT** (nucleotide database)
+- **RFam**
+- **RNACentral**
+
+Run the provided download script:
+
+```bash
+cd alphafold3
+./fetch_databases.sh [<DB_DIR>]
+```
+
+<Info>
+  If `<DB_DIR>` is not specified, databases will be downloaded to `$HOME/public_databases`.
+</Info>
+
+<Warning>
+  **Important Notes:**
+  - Total download size: ~252 GB
+  - Total unzipped size: ~630 GB
+  - Download time: ~45 minutes on fast connections
+  - The download directory should **NOT** be a subdirectory of the AlphaFold 3 repository
+  - Ensure full read/write permissions: `sudo chmod 755 --recursive <DB_DIR>`
+</Warning>
+
+### Expected Directory Structure
+
+After download, you should have:
+
+```text
+<DB_DIR>/
+├── mmcif_files/              # ~200k PDB mmCIF files
+├── bfd-first_non_consensus_sequences.fasta
+├── mgy_clusters_2022_05.fa
+├── nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta
+├── pdb_seqres_2022_09_28.fasta
+├── rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta
+├── rnacentral_active_seq_id_90_cov_80_linclust.fasta
+├── uniprot_all_2021_04.fa
+└── uniref90_2022_05.fa
+```
+
+### Optional: Copy to SSD
+
+<Tip>
+  For better performance, copy databases to an SSD or RAM-backed filesystem after downloading.
+</Tip>
+
+## 6. Obtaining Model Parameters
+
+See the [Obtaining Model Parameters](/obtaining-model-parameters) guide for instructions on requesting access to AlphaFold 3 weights.
+
+Once granted, download the model parameters to `<MODEL_PARAMETERS_DIR>` (should **NOT** be a subdirectory of the AlphaFold 3 repository).
+
+## 7. Building the Docker Container
+
+Build the AlphaFold 3 Docker image:
+
+```bash
+docker build -t alphafold3 -f docker/Dockerfile .
+```
+
+<Info>
+  This step may take 10-20 minutes depending on your internet connection and system performance.
+</Info>
+
+## Running Your First Prediction
+
+Create an input JSON file (e.g., `$HOME/af_input/fold_input.json`):
+
+```json
+{
+  "name": "2PV7",
+  "sequences": [
+    {
+      "protein": {
+        "id": ["A", "B"],
+        "sequence": "GMRESYANENQFGFKTINSDIHKIVIVGGYGKLGGLFARYLRASGYPISILDREDWAVAESILANADVVIVSVPINLTLETIERLKPYLTENMLLADLTSVKREPLAKMLEVHTGAVLGLHPMFGADIASMAKQVVVRCDGRFPERYEWLLEQIQIWGAKIYQTNATEHDHNMTYIQALRHFSTFANGLHLSKQPINLANLLALSSPIYRLELAMIGRLFAQDAELYADIIMDKSENLAVIETLKQTYDEALTFFENNDRQGFIDAFHKVRDWFGDYSEQFLKESRQLLQQANDLKQG"
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+### Run AlphaFold 3
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    --volume <DB_DIR>:/root/public_databases \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output
+```
+
+<Tip>
+  You may need to create and set permissions for the output directory:
+  ```bash
+  mkdir -p $HOME/af_output
+  chmod 755 $HOME/af_input $HOME/af_output
+  ```
+</Tip>
+
+### Key Command-Line Flags
+
+- `--run_data_pipeline` (default: `true`) - Run genetic and template search (CPU-only, time consuming)
+- `--run_inference` (default: `true`) - Run model inference (requires GPU)
+- `--json_path` - Path to input JSON file
+- `--input_dir` - Path to directory of JSON files (alternative to `--json_path`)
+- `--model_dir` - Directory containing model parameters
+- `--output_dir` - Directory for output files
+- `--db_dir` - Database directory (can be specified multiple times for multiple locations)
+
+### View All Flags
+
+```bash
+docker run alphafold3 python run_alphafold.py --help
+```
+
+## Alternative: Singularity Installation
+
+If you prefer Singularity over Docker:
+
+<Steps>
+  <Step title="Install Singularity">
+    ```bash
+    wget https://github.com/sylabs/singularity/releases/download/v4.2.1/singularity-ce_4.2.1-jammy_amd64.deb
+    sudo dpkg --install singularity-ce_4.2.1-jammy_amd64.deb
+    sudo apt-get install -f
+    ```
+  </Step>
+  <Step title="Set up local Docker registry">
+    ```bash
+    docker run -d -p 5000:5000 --restart=always --name registry registry:2
+    docker tag alphafold3 localhost:5000/alphafold3
+    docker push localhost:5000/alphafold3
+    ```
+  </Step>
+  <Step title="Build Singularity image">
+    ```bash
+    SINGULARITY_NOHTTPS=1 singularity build alphafold3.sif docker://localhost:5000/alphafold3:latest
+    ```
+  </Step>
+  <Step title="Test GPU access">
+    ```bash
+    singularity exec --nv alphafold3.sif sh -c 'nvidia-smi'
+    ```
+  </Step>
+</Steps>
+
+### Run with Singularity
+
+```bash
+singularity exec \
+     --nv \
+     --bind $HOME/af_input:/root/af_input \
+     --bind $HOME/af_output:/root/af_output \
+     --bind <MODEL_PARAMETERS_DIR>:/root/models \
+     --bind <DB_DIR>:/root/public_databases \
+     alphafold3.sif \
+     python run_alphafold.py \
+     --json_path=/root/af_input/fold_input.json \
+     --model_dir=/root/models \
+     --db_dir=/root/public_databases \
+     --output_dir=/root/af_output
+```
+
+## Troubleshooting
+
+### Permission Denied Errors
+
+```bash
+sudo chmod 755 --recursive <DB_DIR>
+chmod 755 $HOME/af_input $HOME/af_output
+```
+
+### GPU Not Detected
+
+1. Verify `nvidia-smi` works on host
+2. Reboot if needed: `sudo reboot now`
+3. Test GPU in container: `docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi`
+
+### Out of Memory
+
+For inputs larger than 5,120 tokens or GPUs with less memory, enable unified memory by setting environment variables in your Dockerfile:
+
+```dockerfile
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+ENV TF_FORCE_UNIFIED_MEMORY=true
+ENV XLA_CLIENT_MEM_FRACTION=3.2
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start Guide" icon="rocket" href="/quickstart">
+    Learn how to run different types of predictions
+  </Card>
+  <Card title="Input Documentation" icon="file-code" href="https://github.com/google-deepmind/alphafold3/blob/main/docs/input.md">
+    Detailed JSON input format specification
+  </Card>
+</CardGroup>

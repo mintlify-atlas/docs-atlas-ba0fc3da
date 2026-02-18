@@ -1,0 +1,342 @@
+---
+title: "Frequently Asked Questions"
+description: "Common questions about AlphaFold 3"
+---
+
+## General Questions
+
+<Accordion title="What is AlphaFold 3?">
+  AlphaFold 3 is a deep learning system for predicting the 3D structures of biomolecular complexes, including proteins, nucleic acids, ligands, and post-translational modifications. It represents a significant advancement over AlphaFold 2, extending structure prediction beyond proteins to diverse biomolecular interactions.
+
+  The model was published in Nature: [Accurate structure prediction of biomolecular interactions with AlphaFold 3](https://doi.org/10.1038/s41586-024-07487-w).
+</Accordion>
+
+<Accordion title="How is AlphaFold 3 different from AlphaFold 2?">
+  Key differences include:
+
+  - **Broader scope**: AlphaFold 3 can model proteins, RNA, DNA, ligands, ions, and post-translational modifications
+  - **Complex interactions**: Predicts interactions between different biomolecule types
+  - **Improved accuracy**: Enhanced performance on protein-ligand and protein-nucleic acid interactions
+  - **Covalent modifications**: Supports modeling of covalent bonds and modifications
+  - **New architecture**: Uses an updated neural network architecture optimized for diverse biomolecules
+</Accordion>
+
+<Accordion title="Can I use AlphaFold 3 for commercial purposes?">
+  No, AlphaFold 3 is licensed for **non-commercial use only** under the CC-BY-NC-SA 4.0 license.
+
+  <Warning>
+    The AlphaFold 3 source code and model parameters are subject to non-commercial licensing terms. Review the [terms of use](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md) before use.
+  </Warning>
+
+  For commercial applications, please contact the AlphaFold team at [alphafold@google.com](mailto:alphafold@google.com).
+</Accordion>
+
+<Accordion title="Is there a web server for AlphaFold 3?">
+  Yes, AlphaFold 3 is available at [alphafoldserver.com](https://alphafoldserver.com) for non-commercial use.
+
+  However, the server has limitations:
+  - More limited set of ligands
+  - Fewer covalent modifications supported
+  - No ability to customize model parameters
+
+  The local installation provides full functionality and flexibility.
+</Accordion>
+
+---
+
+## Model Access and Installation
+
+<Accordion title="How do I get access to the AlphaFold 3 model parameters?">
+  To request access to the model parameters:
+
+  1. Complete the [access request form](https://forms.gle/svvpY4u2jsHEwWYS6)
+  2. Wait for approval from Google DeepMind (typically 2-3 business days)
+  3. You will receive a download link via email
+
+  <Info>
+    You may only use AlphaFold 3 model parameters if received directly from Google. Access is granted at Google DeepMind's sole discretion.
+  </Info>
+</Accordion>
+
+<Accordion title="What hardware do I need to run AlphaFold 3?">
+  **Minimum requirements:**
+
+  - **GPU**: NVIDIA GPU with at least 16GB VRAM (e.g., V100, A100, RTX 4090)
+  - **RAM**: 32GB+ system RAM
+  - **Disk**: Several TB for databases (500GB+ for minimal setup)
+  - **CPU**: Multi-core processor for data pipeline
+
+  **Recommended:**
+
+  - **GPU**: A100 80GB or H100 for large complexes
+  - **RAM**: 64GB+ system RAM
+  - **Disk**: 3-5TB SSD for full databases
+
+  <Note>
+    The data pipeline (genetic searches) can run on CPU-only machines without a GPU.
+  </Note>
+</Accordion>
+
+<Accordion title="Can I run AlphaFold 3 without Docker?">
+  While Docker is the officially supported method, technically you can run AlphaFold 3 without Docker by:
+
+  1. Manually installing all dependencies
+  2. Setting up the Python environment
+  3. Configuring paths for databases and models
+
+  However, this is **not recommended** because:
+  - Complex dependency management
+  - Potential version conflicts
+  - Lack of official support
+
+  Docker ensures a consistent, reproducible environment.
+</Accordion>
+
+<Accordion title="How long does installation take?">
+  Installation time varies:
+
+  - **Docker build**: 30-60 minutes (depending on network speed)
+  - **Database download**: Several hours to days (depending on which databases and network speed)
+  - **Model parameters**: 15-30 minutes (depending on network speed)
+
+  Total setup time: Typically **1-3 days** for a complete installation.
+</Accordion>
+
+---
+
+## Running Predictions
+
+<Accordion title="How long does a prediction take?">
+  Prediction time depends on several factors:
+
+  **Data pipeline** (genetic searches):
+  - Simple proteins: 1-4 hours
+  - Complex proteins: 4-24 hours
+  - Very large complexes: 24-48+ hours
+
+  **Inference** (GPU):
+  - Small proteins (&lt;200 residues): 5-15 minutes
+  - Medium proteins (200-500 residues): 15-45 minutes
+  - Large complexes (>500 residues): 45 minutes - 2 hours
+
+  <Info>
+    You can run data pipeline and inference separately using `--run_data_pipeline` and `--run_inference` flags.
+  </Info>
+</Accordion>
+
+<Accordion title="Can I run multiple predictions in parallel?">
+  Yes, with caveats:
+
+  - **Data pipeline**: Can run multiple in parallel if you have enough CPU and RAM
+  - **Inference**: Limited by GPU memory - typically 1-2 predictions per GPU depending on complex size
+
+  For maximum efficiency:
+  1. Run data pipeline on CPU-only machines in parallel
+  2. Run inference sequentially or on multiple GPUs
+</Accordion>
+
+<Accordion title="What is a model seed and how many should I use?">
+  A model seed controls the random initialization of the neural network. Using multiple seeds generates diverse predictions.
+
+  **Recommendations:**
+  - **Standard use**: 5 seeds (`"modelSeeds": [1, 2, 3, 4, 5]`)
+  - **Quick testing**: 1 seed
+  - **High confidence needed**: 10+ seeds
+
+  The model ranks all predictions, with the best one typically selected.
+</Accordion>
+
+<Accordion title="Can I stop and resume a prediction?">
+  **Data pipeline**: Cannot be easily resumed - must restart if interrupted
+
+  **Inference**: Cannot be resumed - must rerun if interrupted
+
+  <Warning>
+    Save your data pipeline outputs to avoid rerunning expensive genetic searches.
+  </Warning>
+
+  Best practices:
+  - Run data pipeline separately with `--run_data_pipeline=true --run_inference=false`
+  - Save MSA and template outputs
+  - Run inference later with pre-computed data
+</Accordion>
+
+---
+
+## Input and Output
+
+<Accordion title="What types of molecules can AlphaFold 3 model?">
+  AlphaFold 3 supports:
+
+  - **Proteins**: Any amino acid sequence
+  - **RNA**: Nucleotide sequences
+  - **DNA**: Nucleotide sequences
+  - **Ligands**: Small molecules (via SMILES or CCD codes)
+  - **Ions**: Common ions (via CCD codes)
+  - **Post-translational modifications**: Glycans, phosphorylation, etc.
+  - **Covalent bonds**: Disulfide bridges, peptide bonds to ligands, etc.
+
+  See the [Input Format](/guides/input-format) documentation for details.
+</Accordion>
+
+<Accordion title="How do I interpret the confidence scores?">
+  AlphaFold 3 provides several confidence metrics:
+
+  **pLDDT** (per-residue confidence):
+  - >90: Very high confidence
+  - 70-90: Generally reliable
+  - 50-70: Low confidence
+  - &lt;50: Should not be interpreted
+
+  **Ranking score**:
+  - Higher scores indicate better overall model quality
+  - Compares different model seeds
+  - Score of -99 or lower indicates severe problems
+
+  <Info>
+    Always inspect structures visually and validate predictions experimentally when possible.
+  </Info>
+</Accordion>
+
+<Accordion title="What output files does AlphaFold 3 produce?">
+  For each prediction:
+
+  - **CIF files**: 3D structure coordinates (mmCIF format)
+  - **JSON files**: Confidence scores and metadata
+  - **Ranking file**: Comparison of different model seeds
+  - **Data pipeline outputs**: MSAs, templates (if run)
+
+  See the [Output Format](/guides/output-format) documentation for details.
+</Accordion>
+
+<Accordion title="Can I use AlphaFold 3 for protein design?">
+  AlphaFold 3 is primarily a **structure prediction** tool, not a design tool. However:
+
+  **Possible uses:**
+  - Validate designed sequences by predicting their structures
+  - Screen multiple design candidates
+  - Predict effects of mutations
+
+  **Not designed for:**
+  - Inverse folding (sequence design from structure)
+  - Optimizing sequences for specific functions
+
+  Consider tools specifically designed for protein design (e.g., ProteinMPNN, RFdiffusion).
+</Accordion>
+
+---
+
+## Ligands and Small Molecules
+
+<Accordion title="How do I add a ligand to my prediction?">
+  Ligands can be specified in two ways:
+
+  **1. Using SMILES:**
+  ```json
+  {
+    "ligand": {
+      "id": ["L"],
+      "smiles": "CC(C)CC1=CC=C(C=C1)C(C)C(=O)O"
+    }
+  }
+  ```
+
+  **2. Using CCD codes:**
+  ```json
+  {
+    "ligand": {
+      "id": ["L"],
+      "ccdCodes": ["ATP"]
+    }
+  }
+  ```
+
+  See the [Input Format](/guides/input-format) documentation for complete examples.
+</Accordion>
+
+<Accordion title="What if my ligand isn't in the CCD?">
+  For non-standard ligands:
+
+  1. **Use SMILES notation**: Define the molecule with a SMILES string
+  2. **Include stereochemistry**: Ensure stereochemistry is explicit in SMILES
+  3. **Specify covalent bonds**: Use `bondedAtomPairs` if needed
+
+  <Info>
+    See the [Community Tools](/resources/community-tools) page for tools like JAAG that help generate ligand inputs.
+  </Info>
+</Accordion>
+
+<Accordion title="How do I model glycans?">
+  Glycan modeling requires:
+
+  1. **Correct CCD codes**: Use SNFG nomenclature
+  2. **Bonded atom pairs**: Specify glycosidic bonds
+  3. **Proper JSON structure**: Follow the glycan format
+
+  <Info>
+    See the paper [Modeling glycans with AlphaFold 3](https://doi.org/10.1093/glycob/cwaf048) for:
+    - Step-by-step tutorials
+    - Ready-to-run scripts
+    - Comprehensive CCD tables
+    - Discussion of limitations
+  </Info>
+
+  Tools like [JAAG](https://biofgreat.org/JAAG) automate glycan input generation.
+</Accordion>
+
+---
+
+## Troubleshooting
+
+<Accordion title="Why is my prediction quality poor?">
+  Common causes:
+
+  1. **Input errors**: Check sequences and ligand definitions
+  2. **Hardware issues**: See [Known Issues](/resources/known-issues) for GPU-specific problems
+  3. **Inherent uncertainty**: Some targets are genuinely difficult to predict
+  4. **Insufficient data**: Limited homologs in genetic databases
+  5. **Complex interactions**: Novel or unusual binding modes
+
+  See the [Troubleshooting](/resources/troubleshooting) page for detailed solutions.
+</Accordion>
+
+<Accordion title="Where can I get help?">
+  Support resources:
+
+  1. **Documentation**: Check the [official documentation](/introduction)
+  2. **Known Issues**: Review the [Known Issues](/resources/known-issues) page
+  3. **GitHub**: Search the [issues tracker](https://github.com/google-deepmind/alphafold3/issues)
+  4. **Community**: See [Community Tools](/resources/community-tools) for community resources
+  5. **Email**: Contact [alphafold@google.com](mailto:alphafold@google.com)
+
+  When reporting issues, include:
+  - Hardware configuration
+  - Error messages
+  - Input JSON
+  - Steps to reproduce
+</Accordion>
+
+---
+
+## Citation and Publication
+
+<Accordion title="How do I cite AlphaFold 3?">
+  See the [Citation](/resources/citation) page for the complete citation information.
+
+  <Note>
+    Any publication using AlphaFold 3 source code, model parameters, or outputs **must** cite the AlphaFold 3 paper.
+  </Note>
+</Accordion>
+
+<Accordion title="Can I share AlphaFold 3 predictions publicly?">
+  Yes, you can share predictions, but:
+
+  - Must cite the AlphaFold 3 paper
+  - Must acknowledge the non-commercial license
+  - Cannot use for commercial purposes
+  - Must include appropriate disclaimers about prediction confidence
+
+  <Warning>
+    Predictions are for theoretical modeling only and not validated for clinical use.
+  </Warning>
+</Accordion>

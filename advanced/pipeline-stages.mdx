@@ -1,0 +1,466 @@
+---
+title: Running Pipeline in Stages
+description: Learn how to run AlphaFold 3's data pipeline and inference separately for optimized resource utilization
+---
+
+# Running Pipeline in Stages
+
+AlphaFold 3 can be executed in stages, separating the CPU-intensive data pipeline from the GPU-intensive inference. This enables optimal resource utilization and efficient reuse of computed MSAs and templates.
+
+## Overview
+
+The complete AlphaFold 3 workflow consists of two main stages:
+
+<Steps>
+
+<Step title="Data Pipeline (CPU-only)">
+Generate Multiple Sequence Alignments (MSAs) and search for structural templates using genetic databases.
+
+**Resource Requirements:**
+- High CPU utilization
+- Significant RAM (64+ GB recommended)
+- Fast disk I/O (SSD recommended)
+- No GPU required
+</Step>
+
+<Step title="Featurization & Inference (GPU)">
+Convert processed data into features and run the neural network model to predict structures.
+
+**Resource Requirements:**
+- GPU (A100 80GB or H100 80GB recommended)
+- Moderate CPU
+- Moderate RAM
+</Step>
+
+</Steps>
+
+## Why Run in Stages?
+
+<Tabs>
+  <Tab title="Cost Optimization">
+  Run the expensive data pipeline on cheaper CPU-only machines, then move to GPU machines only for inference.
+
+  ```bash
+  # On CPU machine (no GPU needed)
+  python run_alphafold.py \
+    --json_path=input.json \
+    --output_dir=output \
+    --norun_inference
+
+  # On GPU machine (reuse computed MSA/templates)
+  python run_alphafold.py \
+    --json_path=output/fold_input.json \
+    --output_dir=output \
+    --norun_data_pipeline
+  ```
+  </Tab>
+
+  <Tab title="MSA Reuse">
+  Compute MSAs once, then run multiple inference variations (different seeds, added ligands, partner chains).
+
+  ```bash
+  # Compute MSAs once
+  python run_alphafold.py \
+    --json_path=protein_a.json \
+    --norun_inference
+
+  # Run multiple inferences with different seeds
+  for seed in 1 2 3 4 5; do
+    # Modify seed in JSON
+    python run_alphafold.py \
+      --json_path=protein_a_with_msa.json \
+      --norun_data_pipeline
+  done
+  ```
+  </Tab>
+
+  <Tab title="Combinatorial Experiments">
+  Compute MSAs for individual chains once, then efficiently fold all pairwise combinations.
+
+  See the [Batch Processing](/advanced/batch-processing) guide for details.
+  </Tab>
+</Tabs>
+
+## Stage 1: Data Pipeline Only
+
+Run the data pipeline without inference:
+
+```bash
+python run_alphafold.py \
+  --json_path=input.json \
+  --output_dir=output \
+  --norun_inference
+```
+
+### What Happens
+
+<Steps>
+
+<Step title="Input Parsing">
+The input JSON is parsed and validated.
+</Step>
+
+<Step title="MSA Generation">
+For each protein chain:
+- Jackhmmer searches against UniRef90, MGnify, BFD, UniProt
+- Paired and unpaired MSAs are generated
+
+For each RNA chain:
+- Nhmmer searches against NT-RNA, Rfam, RNACentral
+- Unpaired MSAs are generated
+</Step>
+
+<Step title="Template Search">
+For each protein chain:
+- Hmmsearch against PDB70 or structure databases
+- Top templates are selected and processed
+</Step>
+
+<Step title="Output Generation">
+Augmented JSON with MSAs and templates is written to:
+```
+output/fold_<job_name>_input.json
+```
+</Step>
+
+</Steps>
+
+### Output Structure
+
+After data pipeline:
+
+```bash
+output/
+└── fold_my_protein_input.json  # Augmented JSON with MSAs and templates
+```
+
+The augmented JSON includes:
+
+```json
+{
+  "name": "my_protein",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTLTGKTITLEVEPS",
+        "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n>hit1\n...",
+        "pairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n...",
+        "templates": [
+          {
+            "mmcif": "data_template\n...",
+            "queryIndices": [0, 1, 2, ...],
+            "templateIndices": [0, 1, 2, ...]
+          }
+        ]
+      }
+    }
+  ],
+  "modelSeeds": [42],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+<Info>
+This augmented JSON can be used directly as input for inference-only runs.
+</Info>
+
+## Stage 2: Inference Only
+
+Run inference using pre-computed MSAs and templates:
+
+```bash
+python run_alphafold.py \
+  --json_path=output/fold_my_protein_input.json \
+  --output_dir=output \
+  --norun_data_pipeline
+```
+
+### Requirements
+
+<Warning>
+The input JSON **must contain** pre-computed MSAs and templates:
+
+- For protein chains: `unpairedMsa`, `pairedMsa`, and `templates` must be set
+- For RNA chains: `unpairedMsa` must be set
+- Empty strings are valid (for MSA-free or template-free predictions)
+- `null` values will cause an error
+</Warning>
+
+### What Happens
+
+<Steps>
+
+<Step title="Input Validation">
+Verifies that all required MSA and template fields are present.
+</Step>
+
+<Step title="Featurization">
+Converts sequences, MSAs, and templates into neural network input features.
+</Step>
+
+<Step title="Model Inference">
+Runs the AlphaFold 3 model on GPU for each specified seed.
+</Step>
+
+<Step title="Output Generation">
+Generates prediction outputs (CIF files, confidence metrics, JSON summaries).
+</Step>
+
+</Steps>
+
+### Output Structure
+
+After inference:
+
+```bash
+output/
+├── fold_my_protein_input.json
+├── fold_my_protein_model.cif          # Predicted structure
+├── fold_my_protein_summary_confidences.json
+└── fold_my_protein_data.json
+```
+
+## Advanced: Pre-computing for Multimers
+
+For efficient multimer screening, compute MSAs for individual chains once, then combine them:
+
+<Tabs>
+  <Tab title="Step 1: Compute Individual MSAs">
+  ```bash
+  # Chain A
+  python run_alphafold.py \
+    --json_path=chain_a.json \
+    --output_dir=msas \
+    --norun_inference
+
+  # Chain B
+  python run_alphafold.py \
+    --json_path=chain_b.json \
+    --output_dir=msas \
+    --norun_inference
+
+  # Chain C
+  python run_alphafold.py \
+    --json_path=chain_c.json \
+    --output_dir=msas \
+    --norun_inference
+  ```
+  </Tab>
+
+  <Tab title="Step 2: Create Dimer JSONs">
+  Combine MSAs from individual chains:
+
+  ```json
+  {
+    "name": "dimer_ab",
+    "sequences": [
+      {
+        "protein": {
+          "id": "A",
+          "sequence": "...",
+          "unpairedMsa": "<from fold_chain_a_input.json>",
+          "pairedMsa": "<from fold_chain_a_input.json>",
+          "templates": []
+        }
+      },
+      {
+        "protein": {
+          "id": "B",
+          "sequence": "...",
+          "unpairedMsa": "<from fold_chain_b_input.json>",
+          "pairedMsa": "<from fold_chain_b_input.json>",
+          "templates": []
+        }
+      }
+    ],
+    "modelSeeds": [42],
+    "dialect": "alphafold3",
+    "version": 4
+  }
+  ```
+  </Tab>
+
+  <Tab title="Step 3: Run Inference Only">
+  ```bash
+  # AB dimer
+  python run_alphafold.py \
+    --json_path=dimer_ab.json \
+    --output_dir=dimers \
+    --norun_data_pipeline
+
+  # AC dimer
+  python run_alphafold.py \
+    --json_path=dimer_ac.json \
+    --output_dir=dimers \
+    --norun_data_pipeline
+
+  # BC dimer
+  python run_alphafold.py \
+    --json_path=dimer_bc.json \
+    --output_dir=dimers \
+    --norun_data_pipeline
+  ```
+
+  Instead of 6 full runs, you only need 3 data pipeline runs + 3 inference runs.
+  </Tab>
+</Tabs>
+
+### Combinatorial Efficiency
+
+For *n* first chains and *m* second chains:
+
+- **Without stages**: *n* × *m* full runs
+- **With stages**: *n* + *m* data pipeline runs + *n* × *m* inference runs
+
+<Info>
+For 10 chains × 10 chains:
+- Without stages: **100 full runs**
+- With stages: **20 data pipeline + 100 inference** (much faster!)
+</Info>
+
+## MSA-Free and Template-Free Modes
+
+You can skip data pipeline stages by providing empty MSAs/templates:
+
+<Tabs>
+  <Tab title="Completely MSA-Free">
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS",
+      "unpairedMsa": "",
+      "pairedMsa": "",
+      "templates": []
+    }
+  }
+  ```
+
+  Run with `--norun_data_pipeline`.
+  </Tab>
+
+  <Tab title="Template-Free Only">
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS",
+      "templates": []
+    }
+  }
+  ```
+
+  Run normally (will compute MSAs but not templates).
+  </Tab>
+
+  <Tab title="Custom MSA, No Templates">
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS",
+      "unpairedMsa": "<your MSA>",
+      "pairedMsa": "",
+      "templates": []
+    }
+  }
+  ```
+
+  Run with `--norun_data_pipeline`.
+  </Tab>
+</Tabs>
+
+## Performance Considerations
+
+### Data Pipeline Performance
+
+From `performance.md:70-84`:
+
+<Info>
+Data pipeline runtime varies significantly based on:
+- Input size
+- Number of homologous sequences
+- Available hardware (CPU cores, disk speed)
+- Database size and sharding
+
+For deep MSAs, Jackhmmer/Nhmmer may need substantial RAM beyond 64 GB.
+</Info>
+
+### Optimization Tips
+
+<Steps>
+
+<Step title="Use Fast Storage">
+Place databases on fast SSD or RAM-backed filesystem:
+
+```bash
+# Create RAM disk (Linux)
+sudo mkdir /mnt/ramdisk
+sudo mount -t tmpfs -o size=512G tmpfs /mnt/ramdisk
+cp -r /path/to/databases/* /mnt/ramdisk/
+```
+</Step>
+
+<Step title="Increase Parallelization">
+```bash
+python run_alphafold.py \
+  --json_path=input.json \
+  --jackhmmer_n_cpu=8 \
+  --nhmmer_n_cpu=8 \
+  --norun_inference
+```
+</Step>
+
+<Step title="Use Sharded Databases">
+Split databases into shards for parallel search. See [performance.md:85-163](/advanced/batch-processing#sharded-databases).
+</Step>
+
+</Steps>
+
+## Complete Example Workflow
+
+```bash
+# Step 1: Data pipeline only (on CPU machine)
+python run_alphafold.py \
+  --json_path=input.json \
+  --output_dir=pipeline_output \
+  --db_dir=/databases \
+  --norun_inference
+
+# Transfer output to GPU machine
+scp pipeline_output/fold_my_protein_input.json gpu_machine:/inference_input/
+
+# Step 2: Inference only (on GPU machine)
+python run_alphafold.py \
+  --json_path=/inference_input/fold_my_protein_input.json \
+  --output_dir=/inference_output \
+  --model_dir=/models \
+  --norun_data_pipeline
+
+# Step 3: Modify seed and run again (reusing MSAs)
+python run_alphafold.py \
+  --json_path=/inference_input/fold_my_protein_input.json \
+  --output_dir=/inference_output_seed2 \
+  --model_dir=/models \
+  --norun_data_pipeline
+```
+
+## Code Reference
+
+From `performance.md:3-18`:
+```markdown
+## Running the Pipeline in Stages
+
+The `run_alphafold.py` script can be executed in stages to optimise
+resource utilisation. This can be useful for:
+
+1. Splitting the CPU-only data pipeline from model inference (which
+   requires a GPU), to optimise cost and resource usage.
+2. Generating the JSON output file from the data pipeline only run
+   and then using it for multiple different inference only runs
+   across seeds or across variations of other features.
+3. Generating the JSON output for multiple individual monomer chains,
+   then running the inference on all possible chain pairs.
+```

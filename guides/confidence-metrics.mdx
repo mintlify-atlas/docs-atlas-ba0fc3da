@@ -1,0 +1,493 @@
+---
+title: 'Confidence Metrics'
+description: 'Understanding pLDDT, PAE, pTM, and ipTM confidence scores'
+icon: 'chart-line'
+---
+
+## Overview
+
+AlphaFold 3 provides multiple confidence metrics to assess prediction quality. These metrics help you understand:
+
+- **Local accuracy**: How confident is each atom/residue?
+- **Global accuracy**: Is the overall fold correct?
+- **Interface quality**: Are chain-chain interactions accurate?
+- **Relative positions**: How accurate are token-token distances?
+
+<Note>
+Similar to AlphaFold 2 and AlphaFold-Multimer, but with enhanced metrics for ligands, nucleic acids, and multi-chain complexes.
+</Note>
+
+## pLDDT: Per-Atom Confidence
+
+<CardGroup cols={1}>
+  <Card title="predicted Local Distance Difference Test" icon="atom">
+    **Range**: 0-100 (higher = more confident)
+    
+    **Granularity**: Per-atom (more detailed than AlphaFold 2's per-residue)
+    
+    **What it measures**: Predicted accuracy of local structure
+  </Card>
+</CardGroup>
+
+### Understanding pLDDT Values
+
+<Tabs>
+  <Tab title="Confidence Ranges">
+    | pLDDT Score | Interpretation | Typical Usage |
+    |-------------|----------------|---------------|
+    | **90-100** | Very high confidence | Well-ordered regions, reliable for detailed analysis |
+    | **70-90** | Confident | Generally accurate, suitable for most applications |
+    | **50-70** | Low confidence | Use with caution, may be flexible/disordered |
+    | **< 50** | Very low confidence | Likely disordered, unreliable coordinates |
+  </Tab>
+  
+  <Tab title="Polymer-Specific">
+    ### Proteins
+    - Similar to AlphaFold 2's lDDT-Cα metric
+    - Per-atom granularity (not just Cα)
+    - Considers distances to other polymer atoms within 15Å
+    
+    ### DNA/RNA
+    - Uses wider 30Å radius (vs. 15Å for proteins)
+    - Reflects nucleic acid structural characteristics
+    - Modified LDDT considers errors only to polymers
+    
+    ### Ligands
+    - Modified LDDT considers only ligand-to-polymer distances
+    - Does NOT consider ligand-to-ligand atom distances
+    - Focuses on protein-ligand interface quality
+  </Tab>
+</Tabs>
+
+### Accessing pLDDT Values
+
+In the confidences JSON:
+
+```json
+{
+  "atom_plddts": [95.2, 94.8, 93.1, ...],  // num_atoms array
+  "atom_chain_ids": ["A", "A", "A", ...]   // maps atoms to chains
+}
+```
+
+### Visualization
+
+Most structure viewers can color by B-factor. AlphaFold 3 stores pLDDT in the B-factor column:
+
+```python PyMOL
+# Load and color by pLDDT (stored in B-factor)
+load model.cif
+spectrum b, blue_white_red, minimum=50, maximum=90
+```
+
+## PAE: Predicted Aligned Error
+
+<CardGroup cols={1}>
+  <Card title="Positional Uncertainty" icon="arrows-cross">
+    **Range**: 0-32 Ångströms (lower = more confident)
+    
+    **Granularity**: Per-token pair
+    
+    **What it measures**: Error in relative position/orientation between two tokens
+  </Card>
+</CardGroup>
+
+### How PAE Works
+
+PAE(i, j) estimates the error in token j's position when the structure is aligned using token i's coordinate frame.
+
+<Steps>
+  <Step title="Alignment">
+    Align predicted structure to true structure using token i's frame
+  </Step>
+  <Step title="Measurement">
+    Measure positional error of token j after alignment
+  </Step>
+  <Step title="Prediction">
+    PAE predicts this error in Ångströms
+  </Step>
+</Steps>
+
+### Interpreting PAE Plots
+
+<Note>
+PAE is visualized as a 2D heatmap where both axes represent token indices.
+</Note>
+
+**Low PAE (dark blue)**: Confident in relative positions
+- **Diagonal blocks**: Well-structured domains
+- **Off-diagonal blocks**: Confident interfaces/contacts
+
+**High PAE (yellow/red)**: Uncertain relative positions
+- Between domains: Flexible linkers
+- Between chains: Uncertain/no interaction
+
+### Frame Construction
+
+<Tabs>
+  <Tab title="Proteins & Nucleic Acids">
+    Frames constructed from backbone atoms:
+    - **Proteins**: Same as AlphaFold 2 (Cα, N, C)
+    - **Nucleic acids**: Backbone phosphate groups
+  </Tab>
+  
+  <Tab title="Small Molecules">
+    Frames constructed for each atom from:
+    - The atom itself
+    - Its closest neighbors in reference conformer
+    - Enables PAE for ligands and PTMs
+  </Tab>
+</Tabs>
+
+### Accessing PAE Values
+
+In the confidences JSON:
+
+```json
+{
+  "pae": [[0.5, 1.2, 15.3, ...],    // num_tokens × num_tokens
+          [1.3, 0.4, 14.8, ...],
+          [15.1, 14.9, 0.6, ...]],
+  "token_chain_ids": ["A", "A", "B", ...]  // maps tokens to chains
+}
+```
+
+### Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Domain Organization" icon="puzzle-piece">
+    Low within-domain PAE, high between-domain PAE suggests multi-domain protein with flexible linkers
+  </Card>
+  <Card title="Interaction Confidence" icon="handshake">
+    Low off-diagonal PAE between chains indicates confident protein-protein interface
+  </Card>
+  <Card title="Binding Assessment" icon="magnet">
+    High PAE between protein and ligand suggests uncertain binding pose
+  </Card>
+  <Card title="Relative Orientation" icon="compass">
+    PAE reveals which regions have well-defined spatial relationships
+  </Card>
+</CardGroup>
+
+## pTM: Predicted Template Modeling Score
+
+<CardGroup cols={1}>
+  <Card title="Global Structure Confidence" icon="globe">
+    **Range**: 0-1 (higher = more confident)
+    
+    **Granularity**: Global scalar
+    
+    **What it measures**: Accuracy of entire predicted structure
+  </Card>
+</CardGroup>
+
+### Interpretation Guidelines
+
+<Tabs>
+  <Tab title="Overall Quality">
+    | pTM Score | Interpretation |
+    |-----------|----------------|
+    | **> 0.8** | Very confident, high-quality prediction |
+    | **0.5-0.8** | Decent confidence, likely correct overall fold |
+    | **< 0.5** | Low confidence, fold may be incorrect |
+  </Tab>
+  
+  <Tab title="Size Considerations">
+    <Warning>
+    pTM is strict for small structures. Values < 0.05 for structures with fewer than 20 tokens.
+    </Warning>
+    
+    For small structures or short chains:
+    - **Use PAE or pLDDT instead** for quality assessment
+    - pTM becomes more reliable with >20 tokens
+    - ipTM more informative for multi-chain systems
+  </Tab>
+</Tabs>
+
+### TM-Score Background
+
+The Template Modeling score measures structural similarity:
+
+$$
+\text{TM-score} = \max \left[ \frac{1}{L} \sum_{i=1}^{L} \frac{1}{1 + (d_i / d_0)^2} \right]
+$$
+
+Where:
+- **L**: Length of target sequence
+- **d_i**: Distance between aligned residues
+- **d_0**: Normalization factor (length-dependent)
+
+<Note>
+References: [Zhang & Skolnick, 2004](https://doi.org/10.1002/prot.20264); [Xu & Zhang, 2010](https://doi.org/10.1093/bioinformatics/btq066)
+</Note>
+
+### Accessing pTM
+
+In summary confidences JSON:
+
+```json
+{
+  "ptm": 0.84,
+  "chain_ptm": [0.89, 0.76, 0.92]  // per-chain pTM
+}
+```
+
+## ipTM: Interface Predicted TM Score
+
+<CardGroup cols={1}>
+  <Card title="Interface Quality" icon="link">
+    **Range**: 0-1 (higher = more confident)
+    
+    **Granularity**: Global or per-chain-pair
+    
+    **What it measures**: Accuracy of predicted interfaces between chains
+  </Card>
+</CardGroup>
+
+### Interpretation Guidelines
+
+| ipTM Score | Interpretation | Action |
+|------------|----------------|--------|
+| **> 0.8** | Confident, high-quality interface | Trust binding mode |
+| **0.6-0.8** | Uncertain region | Verify with experiments |
+| **< 0.6** | Low confidence | Likely incorrect interface |
+
+<Warning>
+ipTM only considers inter-chain interactions. For single-chain predictions, use pTM instead.
+</Warning>
+
+### Types of ipTM Metrics
+
+<Tabs>
+  <Tab title="Global ipTM">
+    Overall confidence in all interfaces:
+    
+    ```json
+    {
+      "iptm": 0.72  // All chain-chain interfaces
+    }
+    ```
+    
+    Use for ranking predictions of the full complex.
+  </Tab>
+  
+  <Tab title="Per-Chain ipTM">
+    Average interface confidence per chain:
+    
+    ```json
+    {
+      "chain_iptm": [0.85, 0.68, 0.91]
+    }
+    ```
+    
+    Element `i` = average ipTM between chain i and all other chains.
+    
+    **Use case**: Ranking predictions when interested in specific chain (e.g., ligand binding)
+  </Tab>
+  
+  <Tab title="Pair-wise ipTM">
+    Interface confidence for each chain pair:
+    
+    ```json
+    {
+      "chain_pair_iptm": [
+        [0.89, 0.72, 0.15],  // Chain A to A,B,C
+        [0.72, 0.84, 0.20],  // Chain B to A,B,C
+        [0.15, 0.20, 0.78]   // Chain C to A,B,C
+      ]
+    }
+    ```
+    
+    - **Diagonal (i,i)**: pTM for chain i
+    - **Off-diagonal (i,j)**: ipTM for i-j interface
+    
+    **Use case**: Antibody-antigen, known interacting pairs
+  </Tab>
+</Tabs>
+
+### Ranking Strategies
+
+<Steps>
+  <Step title="Full Complex">
+    Use global `iptm` or composite `ranking_score`
+  </Step>
+  <Step title="Specific Interface">
+    Use `chain_pair_iptm[i][j]` for known interacting chains i and j
+  </Step>
+  <Step title="Specific Chain">
+    Use `chain_iptm[i]` when you care about chain i's interactions but don't know partners
+  </Step>
+  <Step title="Chain Structure">
+    Use `chain_ptm[i]` when only the structure of chain i matters
+  </Step>
+</Steps>
+
+## Ranking Score
+
+A composite score combining multiple metrics:
+
+```text
+ranking_score = 0.8 × ipTM + 0.2 × pTM + 0.5 × disorder - 100 × has_clash
+```
+
+<Warning>
+**Use ranking_score ONLY for ranking predictions**, not for absolute quality assessment.
+</Warning>
+
+### Components
+
+<ParamField path="ipTM" type="number">
+  Interface confidence (0-1) - weighted 0.8
+</ParamField>
+
+<ParamField path="pTM" type="number">
+  Overall structure confidence (0-1) - weighted 0.2
+</ParamField>
+
+<ParamField path="disorder" type="number">
+  Fraction disordered (0-1) - penalizes spurious helices (+0.5)
+</ParamField>
+
+<ParamField path="has_clash" type="boolean">
+  Significant clashing atoms - strong penalty (-100)
+</ParamField>
+
+### When to Use
+
+<Tabs>
+  <Tab title="Use Ranking Score For">
+    - Selecting best prediction from multiple samples
+    - Comparing predictions with same input
+    - Automated prediction pipelines
+    - Initial filtering before manual inspection
+  </Tab>
+  
+  <Tab title="Don't Use Ranking Score For">
+    - Absolute quality assessment
+    - Comparing different proteins
+    - Scientific reporting (use pTM/ipTM)
+    - Deciding if prediction is correct
+  </Tab>
+</Tabs>
+
+## Additional Metrics
+
+### Contact Probabilities
+
+```json
+{
+  "contact_probs": [[0.95, 0.12, ...],  // num_tokens × num_tokens
+                     [0.12, 0.98, ...]]
+}
+```
+
+Probability that two tokens are within 8Å (representative atoms).
+
+**Use cases**:
+- Identifying likely contacts before structure determination
+- Assessing binding likelihood
+- Filtering potential interfaces
+
+### Chain-Pair PAE Min
+
+```json
+{
+  "chain_pair_pae_min": [
+    [0.5, 15.2, 18.7],
+    [15.1, 0.4, 19.2],
+    [18.9, 19.5, 0.6]
+  ]
+}
+```
+
+Lowest PAE value from chain i to chain j.
+
+<Note>
+**Correlates with binding**: Low `chain_pair_pae_min` between chains suggests they interact. Can distinguish binders from non-binders.
+</Note>
+
+### Disorder Fraction
+
+```json
+{
+  "fraction_disordered": 0.23
+}
+```
+
+Fraction of structure classified as disordered (0-1), measured by accessible surface area.
+
+**Interpretation**:
+- High disorder: Flexible regions, loops, or prediction artifacts
+- Used in ranking score to penalize spurious helices
+
+### Clash Detection
+
+```json
+{
+  "has_clash": false
+}
+```
+
+Boolean indicating significant clashing atoms:
+- More than 50% of any chain has clashes, OR
+- More than 100 clashing atoms in any chain
+
+**Action**: If true, consider re-running with different seeds or inspect manually.
+
+## Practical Guidelines
+
+<Steps>
+  <Step title="Initial Assessment">
+    Check `ranking_score`, `ptm`, and `iptm` in summary JSON
+    - pTM > 0.5: Likely correct fold
+    - ipTM > 0.8: Confident interface
+    - has_clash = false: No major issues
+  </Step>
+  
+  <Step title="Visual Inspection">
+    Load structure colored by pLDDT (B-factor)
+    - Blue regions (>90): High confidence
+    - Red regions (&lt;50): Disordered/uncertain
+  </Step>
+  
+  <Step title="Interface Analysis">
+    Examine PAE plot
+    - Low PAE blocks between chains: Good interface
+    - High PAE: Uncertain interaction
+  </Step>
+  
+  <Step title="Chain-Specific Quality">
+    Check per-chain metrics
+    - `chain_ptm[i]`: Structure of chain i
+    - `chain_iptm[i]`: Chain i's interfaces
+    - `chain_pair_pae_min[i][j]`: Likely interaction between i and j
+  </Step>
+  
+  <Step title="Domain Analysis">
+    For multi-domain proteins:
+    - Low within-domain PAE: Well-structured domains
+    - High between-domain PAE: Flexible linkers
+  </Step>
+</Steps>
+
+## Additional Resources
+
+<CardGroup cols={2}>
+  <Card title="AlphaFold 3 Paper" icon="file-pdf" href="https://www.nature.com/articles/s41586-024-07487-w">
+    Detailed description of confidence metrics
+  </Card>
+  <Card title="EBI Training" icon="graduation-cap" href="https://www.ebi.ac.uk/training/online/courses/alphafold/">
+    Practical guide to confidence scores (AlphaFold 2 focused, still applicable)
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Output Format" icon="folder-open" href="/guides/output-format">
+    Learn about output file structure
+  </Card>
+  <Card title="Performance" icon="gauge" href="/guides/performance-optimization">
+    Optimize predictions for better results
+  </Card>
+</CardGroup>

@@ -1,0 +1,273 @@
+---
+title: "Chemical Components"
+description: "Chemical Components found in PDB (CCD) constants and utilities"
+---
+
+## Overview
+
+The `chemical_components` module provides access to the Chemical Components Dictionary (CCD) from the Protein Data Bank. It includes classes and utilities for working with chemical component data in mmCIF format.
+
+**Module Path:** `alphafold3.constants.chemical_components`
+
+**Reference:** [CCD CIF format documentation](https://academic.oup.com/bioinformatics/article/31/8/1274/212200)
+
+---
+
+## Classes
+
+### Ccd
+
+```python
+class Ccd(Mapping[str, Mapping[str, Sequence[str]]])
+```
+
+Chemical Components found in PDB (CCD) constants. This class wraps the CCD dictionary to prevent accidental mutation and provides a mapping interface.
+
+<ParamField path="ccd_pickle_path" type="os.PathLike[str] | None" default="None">
+  Path to the CCD pickle file. If None, uses the default CCD pickle file included in the source code.
+</ParamField>
+
+<ParamField path="user_ccd" type="str | None" default="None">
+  A string containing the user-provided CCD. This has to conform to the same format as the CCD (see [wwPDB CCD](https://www.wwpdb.org/data/ccd)). If provided, takes precedence over the CCD for the same key. This can be used to override specific entries in the CCD if desired.
+</ParamField>
+
+#### Methods
+
+<Accordion title="__getitem__(key: str)">
+  Returns the chemical component data for the given key.
+  
+  ```python
+  def __getitem__(self, key: str) -> Mapping[str, Sequence[str]]
+  ```
+  
+  **Parameters:**
+  - `key`: Component name (e.g., 'ARG', 'MSE')
+  
+  **Returns:** Mapping of CCD fields to their values
+</Accordion>
+
+<Accordion title="get(key, default)">
+  Returns the chemical component data for the given key, or default if not found.
+  
+  ```python
+  def get(
+      self, 
+      key: str, 
+      default: None | Mapping[str, Sequence[str]] = None
+  ) -> Mapping[str, Sequence[str]] | None
+  ```
+  
+  **Parameters:**
+  - `key`: Component name
+  - `default`: Value to return if key is not found
+  
+  **Returns:** Component data or default value
+</Accordion>
+
+<Accordion title="Standard Mapping Methods">
+  The `Ccd` class implements the full `Mapping` interface:
+  
+  - `__contains__(key: str) -> bool`: Check if a component exists
+  - `__iter__() -> Iterator[str]`: Iterate over component names
+  - `__len__() -> int`: Get the number of components
+  - `keys() -> KeysView[str]`: Get all component names
+  - `values() -> ValuesView[Mapping[str, Sequence[str]]]`: Get all component data
+  - `items() -> ItemsView[str, Mapping[str, Sequence[str]]]`: Get all key-value pairs
+</Accordion>
+
+#### Example Usage
+
+```python
+from alphafold3.constants.chemical_components import Ccd
+
+# Initialize with default CCD
+ccd = Ccd()
+
+# Get component data
+arg_data = ccd['ARG']
+print(arg_data['_chem_comp.name'])
+
+# Check if component exists
+if 'MSE' in ccd:
+    mse_data = ccd.get('MSE')
+
+# Initialize with custom CCD
+custom_ccd_string = """# Custom CCD data"""
+ccd_custom = Ccd(user_ccd=custom_ccd_string)
+```
+
+---
+
+### ComponentInfo
+
+```python
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class ComponentInfo
+```
+
+A dataclass containing structured information about a chemical component.
+
+<ParamField path="name" type="str">
+  The full name of the component
+</ParamField>
+
+<ParamField path="type" type="str">
+  The type of the component (e.g., 'L-peptide linking', 'non-polymer')
+</ParamField>
+
+<ParamField path="pdbx_synonyms" type="str">
+  Alternative names for the component
+</ParamField>
+
+<ParamField path="formula" type="str">
+  Chemical formula
+</ParamField>
+
+<ParamField path="formula_weight" type="str">
+  Molecular weight
+</ParamField>
+
+<ParamField path="mon_nstd_parent_comp_id" type="str">
+  Parent component ID for non-standard monomers
+</ParamField>
+
+<ParamField path="mon_nstd_flag" type="str">
+  Flag indicating if the component is standard:
+  - `'.'`: Unset for non-polymers (e.g., water, ions)
+  - `'y'`: Standard component without a standard parent (e.g., MET)
+  - `'n'`: Non-standard component (e.g., MSE)
+</ParamField>
+
+<ParamField path="pdbx_smiles" type="str">
+  SMILES representation (canonical SMILES preferred, falls back to regular SMILES)
+</ParamField>
+
+---
+
+## Functions
+
+### mmcif_to_info
+
+```python
+def mmcif_to_info(mmcif: Mapping[str, Sequence[str]]) -> ComponentInfo
+```
+
+Converts CCD mmCIF data to a structured `ComponentInfo` object. Missing fields are left empty.
+
+<ParamField path="mmcif" type="Mapping[str, Sequence[str]]">
+  mmCIF dictionary containing component data
+</ParamField>
+
+**Returns:** `ComponentInfo` object with parsed data
+
+**Example:**
+
+```python
+from alphafold3.constants.chemical_components import Ccd, mmcif_to_info
+
+ccd = Ccd()
+arg_mmcif = ccd['ARG']
+arg_info = mmcif_to_info(arg_mmcif)
+
+print(f"Name: {arg_info.name}")
+print(f"Type: {arg_info.type}")
+print(f"Formula: {arg_info.formula}")
+```
+
+---
+
+### component_name_to_info
+
+```python
+@functools.lru_cache(maxsize=128)
+def component_name_to_info(ccd: Ccd, res_name: str) -> ComponentInfo | None
+```
+
+Converts a residue/component name to structured `ComponentInfo`. Results are cached for performance.
+
+<ParamField path="ccd" type="Ccd">
+  The chemical components dictionary
+</ParamField>
+
+<ParamField path="res_name" type="str">
+  The component name (e.g., 'ARG', 'MSE')
+</ParamField>
+
+**Returns:** `ComponentInfo` object or `None` if not found
+
+**Example:**
+
+```python
+from alphafold3.constants.chemical_components import Ccd, component_name_to_info
+
+ccd = Ccd()
+info = component_name_to_info(ccd, 'ARG')
+if info:
+    print(f"Standard: {info.mon_nstd_flag == 'y'}")
+```
+
+---
+
+### type_symbol
+
+```python
+def type_symbol(ccd: Ccd, res_name: str, atom_name: str) -> str
+```
+
+Returns the element type for the given component name and atom name.
+
+<ParamField path="ccd" type="Ccd">
+  The chemical components dictionary
+</ParamField>
+
+<ParamField path="res_name" type="str">
+  The component name (e.g., 'ARG')
+</ParamField>
+
+<ParamField path="atom_name" type="str">
+  The atom name (e.g., 'CB', 'OXT', 'NH1')
+</ParamField>
+
+**Returns:** Element type (e.g., 'C', 'O', 'N') or '?' if not found
+
+**Examples:**
+
+```python
+from alphafold3.constants.chemical_components import Ccd, type_symbol
+
+ccd = Ccd()
+
+# Get element types for different atoms in ARG
+print(type_symbol(ccd, 'ARG', 'CB'))   # Returns: 'C'
+print(type_symbol(ccd, 'ARG', 'OXT'))  # Returns: 'O'
+print(type_symbol(ccd, 'ARG', 'NH1'))  # Returns: 'N'
+```
+
+---
+
+## Constants
+
+### _CCD_PICKLE_FILE
+
+```python
+_CCD_PICKLE_FILE = resources.filename(
+    resources.ROOT / 'constants/converters/ccd.pickle'
+)
+```
+
+Path to the default CCD pickle file included in the AlphaFold 3 source code.
+
+---
+
+## Internal Functions
+
+### _load_ccd_pickle_cached
+
+```python
+@functools.cache
+def _load_ccd_pickle_cached(
+    path: os.PathLike[str],
+) -> dict[str, Mapping[str, Sequence[str]]]
+```
+
+Loads the CCD pickle file and caches it so that it is only loaded once. This is an internal function used by the `Ccd` class.

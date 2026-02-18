@@ -1,0 +1,790 @@
+---
+title: "Template Processing"
+description: "Retrieve and process structural templates from PDB for template-based structure prediction."
+---
+
+## Overview
+
+The template processing module searches for and featurises structural templates from the Protein Data Bank. Templates provide structural constraints that guide AlphaFold 3's predictions, especially for proteins with known homologous structures.
+
+## Classes
+
+### Hit
+
+Represents a single template hit from structure database search.
+
+```python
+@dataclasses.dataclass(frozen=True, kw_only=True)
+class Hit:
+    pdb_id: str
+    auth_chain_id: str
+    hmmsearch_sequence: str
+    structure_sequence: str
+    unresolved_res_indices: Sequence[int] | None
+    query_sequence: str
+    start_index: int
+    end_index: int
+    full_length: int
+    release_date: datetime.date
+    chain_poly_type: str
+```
+
+<ParamField path="pdb_id" type="str" required>
+  PDB ID of the hit (lowercase).
+</ParamField>
+
+<ParamField path="auth_chain_id" type="str" required>
+  Author chain ID from the PDB structure.
+</ParamField>
+
+<ParamField path="hmmsearch_sequence" type="str" required>
+  Hit sequence as returned by hmmsearch in A3M format (may contain gaps and lowercase insertions).
+</ParamField>
+
+<ParamField path="structure_sequence" type="str" required>
+  Full sequence from the PDB structure.
+</ParamField>
+
+<ParamField path="unresolved_res_indices" type="Sequence[int] | None" required>
+  0-based indices of unresolved residues in the structure. `None` if structure is unavailable.
+</ParamField>
+
+<ParamField path="query_sequence" type="str" required>
+  The query sequence used for template search.
+</ParamField>
+
+<ParamField path="start_index" type="int" required>
+  Start index of alignment relative to full PDB seqres sequence (0-based, inclusive).
+</ParamField>
+
+<ParamField path="end_index" type="int" required>
+  End index of alignment relative to full PDB seqres sequence (0-based, exclusive).
+</ParamField>
+
+<ParamField path="full_length" type="int" required>
+  Length of the full PDB seqres sequence.
+</ParamField>
+
+<ParamField path="release_date" type="datetime.date" required>
+  Release date of the PDB structure.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Polymer type (`PROTEIN_CHAIN`, `RNA_CHAIN`, or `DNA_CHAIN`).
+</ParamField>
+
+**Properties:**
+
+<ResponseField name="query_to_hit_mapping" type="Mapping[int, int]">
+  0-based query index to hit structure index mapping. Handles realignment when seqres doesn't match structure sequence.
+</ResponseField>
+
+<ResponseField name="matching_sequence" type="str">
+  Hit sequence with deletions uppercased and gaps removed.
+</ResponseField>
+
+<ResponseField name="output_templates_sequence" type="str">
+  Final template sequence aligned to query (gaps represented as '-').
+</ResponseField>
+
+<ResponseField name="length_ratio" type="float">
+  Ratio of hit sequence length to query length.
+</ResponseField>
+
+<ResponseField name="align_ratio" type="float">
+  Ratio of aligned residues to query length.
+</ResponseField>
+
+<ResponseField name="is_valid" type="bool">
+  Whether hit can be used as template (has resolved residues at alignment positions).
+</ResponseField>
+
+<ResponseField name="full_name" type="str">
+  Full template name in format `{pdb_id}_{auth_chain_id}`.
+</ResponseField>
+
+#### Methods
+
+##### keep
+
+Determine if hit should be kept based on filtering criteria.
+
+```python
+def keep(
+    self,
+    *,
+    release_date_cutoff: datetime.date | None,
+    max_subsequence_ratio: float | None,
+    min_hit_length: int | None,
+    min_align_ratio: float | None,
+) -> bool
+```
+
+<ParamField path="release_date_cutoff" type="datetime.date | None">
+  Maximum release date for templates. Hits with later dates are excluded.
+</ParamField>
+
+<ParamField path="max_subsequence_ratio" type="float | None">
+  Maximum length ratio for exact subsequences. Excludes hits that are exact subsequences of query and exceed this ratio (prevents ground truth leakage).
+</ParamField>
+
+<ParamField path="min_hit_length" type="int | None">
+  Minimum residue count. Excludes shorter hits.
+</ParamField>
+
+<ParamField path="min_align_ratio" type="float | None">
+  Minimum ratio of aligned residues to query length. Excludes hits with fewer alignments.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if hit passes all filters and has resolved residues, False otherwise.
+</ResponseField>
+
+**Example:**
+
+```python
+import datetime
+
+should_keep = hit.keep(
+    release_date_cutoff=datetime.date(2021, 1, 1),
+    max_subsequence_ratio=0.95,
+    min_hit_length=30,
+    min_align_ratio=0.25
+)
+
+if should_keep:
+    print(f"Keeping template: {hit.full_name}")
+```
+
+---
+
+### Templates
+
+Container for template hits with featurisation and filtering capabilities.
+
+```python
+@dataclasses.dataclass(init=False)
+class Templates:
+    def __init__(
+        self,
+        *,
+        query_sequence: str,
+        hits: Sequence[Hit],
+        max_template_date: datetime.date,
+        structure_store: structure_stores.StructureStore,
+        query_release_date: datetime.date | None = None,
+    )
+```
+
+<ParamField path="query_sequence" type="str" required>
+  The query sequence for which templates were found.
+</ParamField>
+
+<ParamField path="hits" type="Sequence[Hit]" required>
+  Template hits found for the query.
+</ParamField>
+
+<ParamField path="max_template_date" type="datetime.date" required>
+  Maximum template date for filtering (prevents test set leakage).
+</ParamField>
+
+<ParamField path="structure_store" type="structure_stores.StructureStore" required>
+  Structure store for fetching template structures.
+</ParamField>
+
+<ParamField path="query_release_date" type="datetime.date | None">
+  Release date of query structure. Used to ensure templates don't leak future structural information.
+</ParamField>
+
+**Properties:**
+
+<ResponseField name="query_sequence" type="str">
+  The query sequence.
+</ResponseField>
+
+<ResponseField name="hits" type="tuple[Hit, ...]">
+  Template hits (immutable).
+</ResponseField>
+
+<ResponseField name="num_hits" type="int">
+  Number of template hits.
+</ResponseField>
+
+<ResponseField name="query_release_date" type="datetime.date | None">
+  Query release date if provided.
+</ResponseField>
+
+<ResponseField name="release_date_cutoff" type="datetime.date">
+  Effective release date cutoff (minimum of max_template_date and query_release_date minus 60 days).
+</ResponseField>
+
+<ResponseField name="structures" type="Iterator[structure.Structure]">
+  Iterator over unique template structures. Yields one Structure per unique PDB ID.
+</ResponseField>
+
+#### Class Methods
+
+##### from_seq_and_a3m
+
+Create templates by running hmmsearch against a custom MSA.
+
+```python
+@classmethod
+def from_seq_and_a3m(
+    cls,
+    *,
+    query_sequence: str,
+    msa_a3m: str,
+    max_template_date: datetime.date,
+    database_path: os.PathLike[str] | str,
+    hmmsearch_config: msa_config.HmmsearchConfig,
+    max_a3m_query_sequences: int | None,
+    structure_store: structure_stores.StructureStore,
+    filter_config: msa_config.TemplateFilterConfig | None = None,
+    query_release_date: datetime.date | None = None,
+    chain_poly_type: str = mmcif_names.PROTEIN_CHAIN,
+) -> Self
+```
+
+<ParamField path="query_sequence" type="str" required>
+  Target polymer sequence.
+</ParamField>
+
+<ParamField path="msa_a3m" type="str" required>
+  MSA in A3M format used to create HMM profile for hmmsearch.
+</ParamField>
+
+<ParamField path="max_template_date" type="datetime.date" required>
+  Maximum template release date (for training, prevents ground truth leakage).
+</ParamField>
+
+<ParamField path="database_path" type="os.PathLike[str] | str" required>
+  Path to sequence database to search for templates.
+</ParamField>
+
+<ParamField path="hmmsearch_config" type="msa_config.HmmsearchConfig" required>
+  Hmmsearch configuration.
+</ParamField>
+
+<ParamField path="max_a3m_query_sequences" type="int | None" required>
+  Maximum MSA sequences to use for profile construction.
+</ParamField>
+
+<ParamField path="structure_store" type="structure_stores.StructureStore" required>
+  Structure store to fetch template structures.
+</ParamField>
+
+<ParamField path="filter_config" type="msa_config.TemplateFilterConfig | None">
+  Optional filtering configuration. More performant than constructing all templates then filtering.
+</ParamField>
+
+<ParamField path="query_release_date" type="datetime.date | None">
+  Query release date for temporal filtering.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" default="mmcif_names.PROTEIN_CHAIN">
+  Polymer type of templates.
+</ParamField>
+
+<ResponseField name="return" type="Templates">
+  Templates object with hits initialized from structure store metadata and alignments.
+</ResponseField>
+
+**Example:**
+
+```python
+import datetime
+from alphafold3.data import templates, structure_stores, msa_config
+from alphafold3.constants import mmcif_names
+
+# Load structure store
+store = structure_stores.PdbStructureStore(
+    pdb_dir="/data/pdb_mmcif",
+    obsolete_pdbs_path="/data/obsolete.dat"
+)
+
+# Configure hmmsearch
+hmmsearch_cfg = msa_config.HmmsearchConfig(
+    hmmsearch_binary_path="/usr/bin/hmmsearch",
+    hmmbuild_binary_path="/usr/bin/hmmbuild",
+    e_value=0.0001,
+    alphabet="amino"
+)
+
+# Configure filtering
+filter_cfg = msa_config.TemplateFilterConfig(
+    max_template_date=datetime.date(2021, 9, 30),
+    max_subsequence_ratio=0.95,
+    min_align_ratio=0.1,
+    min_hit_length=10,
+    deduplicate_sequences=True,
+    max_hits=20
+)
+
+# Create templates from MSA
+templates_obj = templates.Templates.from_seq_and_a3m(
+    query_sequence="MKTAYIAKQRQISFVKSHFSRQLE",
+    msa_a3m=msa_a3m_string,
+    max_template_date=datetime.date(2021, 9, 30),
+    database_path="/data/pdb_seqres.txt",
+    hmmsearch_config=hmmsearch_cfg,
+    max_a3m_query_sequences=512,
+    structure_store=store,
+    filter_config=filter_cfg,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN
+)
+
+print(f"Found {templates_obj.num_hits} template hits")
+```
+
+##### from_hmmsearch_a3m
+
+Create templates from hmmsearch results in A3M format.
+
+```python
+@classmethod
+def from_hmmsearch_a3m(
+    cls,
+    *,
+    query_sequence: str,
+    a3m: str,
+    max_template_date: datetime.date,
+    structure_store: structure_stores.StructureStore,
+    filter_config: msa_config.TemplateFilterConfig | None = None,
+    query_release_date: datetime.date | None = None,
+    chain_poly_type: str = mmcif_names.PROTEIN_CHAIN,
+) -> Self
+```
+
+<ParamField path="query_sequence" type="str" required>
+  Target polymer sequence.
+</ParamField>
+
+<ParamField path="a3m" type="str" required>
+  Hmmsearch results in A3M format containing template alignments and PDB codes.
+</ParamField>
+
+<ParamField path="max_template_date" type="datetime.date" required>
+  Maximum template release date.
+</ParamField>
+
+<ParamField path="structure_store" type="structure_stores.StructureStore" required>
+  Structure store to fetch templates.
+</ParamField>
+
+<ParamField path="filter_config" type="msa_config.TemplateFilterConfig | None">
+  Optional filtering configuration.
+</ParamField>
+
+<ParamField path="query_release_date" type="datetime.date | None">
+  Query release date.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" default="mmcif_names.PROTEIN_CHAIN">
+  Polymer type.
+</ParamField>
+
+<ResponseField name="return" type="Templates">
+  Templates object with hits from A3M.
+</ResponseField>
+
+**Example:**
+
+```python
+# Parse hmmsearch output
+hmmsearch_a3m = """>4pqx_A/2-217 [subseq from] mol:protein length:217 Free text
+MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEK
+>5g3r_A/1-55 [subseq from] mol:protein length:352
+MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQD-LSGAEK
+"""
+
+templates_obj = templates.Templates.from_hmmsearch_a3m(
+    query_sequence="MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEK",
+    a3m=hmmsearch_a3m,
+    max_template_date=datetime.date(2021, 9, 30),
+    structure_store=store,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN
+)
+```
+
+#### Instance Methods
+
+##### filter
+
+Return new Templates object with filtered hits.
+
+```python
+def filter(
+    self,
+    *,
+    max_subsequence_ratio: float | None,
+    min_align_ratio: float | None,
+    min_hit_length: int | None,
+    deduplicate_sequences: bool,
+    max_hits: int | None,
+) -> Self
+```
+
+<ParamField path="max_subsequence_ratio" type="float | None">
+  Exclude hits that are exact subsequences of query exceeding this ratio.
+</ParamField>
+
+<ParamField path="min_align_ratio" type="float | None">
+  Exclude hits where aligned residues are less than this proportion of query length.
+</ParamField>
+
+<ParamField path="min_hit_length" type="int | None">
+  Exclude hits with fewer residues than this.
+</ParamField>
+
+<ParamField path="deduplicate_sequences" type="bool" required>
+  Whether to exclude duplicate template sequences (keeps first occurrence).
+</ParamField>
+
+<ParamField path="max_hits" type="int | None">
+  Maximum number of hits to keep.
+</ParamField>
+
+<ResponseField name="return" type="Templates">
+  New Templates object with filtered hits.
+</ResponseField>
+
+**Example:**
+
+```python
+filtered = templates_obj.filter(
+    max_subsequence_ratio=0.95,
+    min_align_ratio=0.1,
+    min_hit_length=20,
+    deduplicate_sequences=True,
+    max_hits=20
+)
+
+print(f"Filtered from {templates_obj.num_hits} to {filtered.num_hits} hits")
+```
+
+##### get_hits_with_structures
+
+Get hits paired with their filtered Structure objects.
+
+```python
+def get_hits_with_structures(self) -> Sequence[tuple[Hit, structure.Structure]]
+```
+
+<ResponseField name="return" type="Sequence[tuple[Hit, structure.Structure]]">
+  List of (Hit, Structure) tuples. Each Structure is filtered to the hit's chain.
+</ResponseField>
+
+**Raises:**
+- `InvalidTemplateError`: If hits haven't been filtered before calling (contains invalid hits)
+
+**Example:**
+
+```python
+try:
+    hits_with_structs = filtered.get_hits_with_structures()
+    for hit, struc in hits_with_structs:
+        print(f"{hit.full_name}: {struc.num_atoms} atoms")
+except templates.InvalidTemplateError as e:
+    print(f"Must filter hits first: {e}")
+```
+
+##### featurize
+
+Featurise templates for model input.
+
+```python
+def featurize(
+    self,
+    include_ligand_features: bool = True,
+) -> TemplateFeatures
+```
+
+<ParamField path="include_ligand_features" type="bool" default="True">
+  Whether to compute ligand features from template structures.
+</ParamField>
+
+<ResponseField name="return" type="TemplateFeatures">
+  Dictionary mapping feature names to values:
+  - `template_aatype`: Encoded residue types (int32 array)
+  - `template_all_atom_masks`: Atom presence masks (float64 array)
+  - `template_all_atom_positions`: Atom coordinates (float64 array)
+  - `template_domain_names`: Template names (bytes objects)
+  - `template_release_date`: Release dates (bytes objects)
+  - `template_sequence`: Template sequences (bytes objects)
+  - `ligand_features`: (if `include_ligand_features=True`) Nested dict of ligand features per chain
+</ResponseField>
+
+**Raises:**
+- `InvalidTemplateError`: If hits haven't been filtered before featurization
+
+**Example:**
+
+```python
+try:
+    features = filtered.featurize(include_ligand_features=True)
+    
+    print(f"Template shapes:")
+    print(f"  aatype: {features['template_aatype'].shape}")
+    print(f"  positions: {features['template_all_atom_positions'].shape}")
+    print(f"  masks: {features['template_all_atom_masks'].shape}")
+    
+    if 'ligand_features' in features:
+        print(f"  ligand features: {len(features['ligand_features'])} chains")
+except templates.InvalidTemplateError as e:
+    print(f"Must filter hits first: {e}")
+```
+
+---
+
+## Functions
+
+### run_hmmsearch_with_a3m
+
+Run hmmsearch to find template hits using an MSA.
+
+```python
+def run_hmmsearch_with_a3m(
+    *,
+    database_path: os.PathLike[str] | str,
+    hmmsearch_config: msa_config.HmmsearchConfig,
+    max_a3m_query_sequences: int | None,
+    a3m: str | None,
+) -> str
+```
+
+<ParamField path="database_path" type="os.PathLike[str] | str" required>
+  Path to sequence database (e.g., PDB seqres).
+</ParamField>
+
+<ParamField path="hmmsearch_config" type="msa_config.HmmsearchConfig" required>
+  Hmmsearch configuration.
+</ParamField>
+
+<ParamField path="max_a3m_query_sequences" type="int | None" required>
+  Maximum MSA sequences to use for HMM profile construction. `None` uses all sequences.
+</ParamField>
+
+<ParamField path="a3m" type="str | None" required>
+  MSA in A3M format. Used to build HMM profile.
+</ParamField>
+
+<ResponseField name="return" type="str">
+  Hmmsearch results in A3M format.
+</ResponseField>
+
+**Example:**
+
+```python
+from alphafold3.data import templates, msa_config
+
+hmmsearch_cfg = msa_config.HmmsearchConfig(
+    hmmsearch_binary_path="/usr/bin/hmmsearch",
+    hmmbuild_binary_path="/usr/bin/hmmbuild",
+    e_value=0.0001,
+    inc_e=None,
+    dom_e=None,
+    incdom_e=None,
+    alphabet="amino",
+    filter_f1=0.02,
+    filter_f2=0.001,
+    filter_f3=0.0001,
+    filter_max=False
+)
+
+hits_a3m = templates.run_hmmsearch_with_a3m(
+    database_path="/data/pdb_seqres.txt",
+    hmmsearch_config=hmmsearch_cfg,
+    max_a3m_query_sequences=512,
+    a3m=msa_a3m_string
+)
+
+print(f"Hmmsearch returned {len(hits_a3m.splitlines())} lines")
+```
+
+### get_polymer_features
+
+Extract polymer features from a template structure chain.
+
+```python
+def get_polymer_features(
+    *,
+    chain: structure.Structure,
+    chain_poly_type: str,
+    query_sequence_length: int,
+    query_to_hit_mapping: Mapping[int, int],
+) -> Mapping[str, Any]
+```
+
+<ParamField path="chain" type="structure.Structure" required>
+  Structure object filtered to a single polymer chain.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Polymer type (`PROTEIN_CHAIN`, `RNA_CHAIN`, or `DNA_CHAIN`).
+</ParamField>
+
+<ParamField path="query_sequence_length" type="int" required>
+  Length of the query sequence.
+</ParamField>
+
+<ParamField path="query_to_hit_mapping" type="Mapping[int, int]" required>
+  0-based query index to hit index mapping.
+</ParamField>
+
+<ResponseField name="return" type="Mapping[str, Any]">
+  Dictionary with polymer features:
+  - `template_all_atom_positions`: Atom coordinates aligned to query
+  - `template_all_atom_masks`: Atom presence masks
+  - `template_sequence`: Template sequence as bytes
+  - `template_aatype`: Encoded residue types
+  - `template_domain_names`: Template name as bytes
+  - `template_release_date`: Release date as bytes
+</ResponseField>
+
+**Raises:**
+- `ValueError`: If structure doesn't have a name, lacks release date, or contains multiple chains
+
+**Example:**
+
+```python
+from alphafold3 import structure
+from alphafold3.data import templates
+from alphafold3.constants import mmcif_names
+
+# Load and filter structure to single chain
+struc = structure.from_mmcif(
+    mmcif_string=mmcif_content,
+    fix_mse_residues=True,
+    fix_arginines=True,
+    include_water=False
+)
+chain_struc = struc.filter(chain_id="A")
+
+# Extract features
+features = templates.get_polymer_features(
+    chain=chain_struc,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+    query_sequence_length=100,
+    query_to_hit_mapping=hit.query_to_hit_mapping
+)
+
+print(f"Atom positions shape: {features['template_all_atom_positions'].shape}")
+```
+
+### package_template_features
+
+Stack and package features from multiple template hits.
+
+```python
+def package_template_features(
+    *,
+    hit_features: Sequence[Mapping[str, Any]],
+    include_ligand_features: bool,
+) -> Mapping[str, Any]
+```
+
+<ParamField path="hit_features" type="Sequence[Mapping[str, Any]]" required>
+  List of feature dictionaries, one per hit.
+</ParamField>
+
+<ParamField path="include_ligand_features" type="bool" required>
+  Whether to include ligand features in output.
+</ParamField>
+
+<ResponseField name="return" type="Mapping[str, Any]">
+  Dictionary with stacked polymer features and unstacked ligand features (if included).
+</ResponseField>
+
+## Template Search Workflow
+
+Complete workflow for finding and using templates:
+
+```python
+import datetime
+from alphafold3.data import templates, msa, structure_stores, msa_config
+from alphafold3.constants import mmcif_names
+
+# 1. Get MSA for query
+query_seq = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEK"
+msa_result = msa.get_msa(
+    target_sequence=query_seq,
+    run_config=msa_run_config,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN
+)
+
+# 2. Convert MSA to A3M
+msa_a3m = msa_result.to_a3m()
+
+# 3. Search for templates
+structure_store = structure_stores.PdbStructureStore(
+    pdb_dir="/data/pdb_mmcif",
+    obsolete_pdbs_path="/data/obsolete.dat"
+)
+
+templates_obj = templates.Templates.from_seq_and_a3m(
+    query_sequence=query_seq,
+    msa_a3m=msa_a3m,
+    max_template_date=datetime.date(2021, 9, 30),
+    database_path="/data/pdb_seqres.txt",
+    hmmsearch_config=hmmsearch_config,
+    max_a3m_query_sequences=512,
+    structure_store=structure_store,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN
+)
+
+print(f"Found {templates_obj.num_hits} initial hits")
+
+# 4. Filter templates
+filtered = templates_obj.filter(
+    max_subsequence_ratio=0.95,
+    min_align_ratio=0.1,
+    min_hit_length=20,
+    deduplicate_sequences=True,
+    max_hits=20
+)
+
+print(f"Kept {filtered.num_hits} hits after filtering")
+
+# 5. Featurise for model input
+template_features = filtered.featurize(include_ligand_features=True)
+
+print("Template features ready for inference")
+print(f"  Shape: {template_features['template_all_atom_positions'].shape}")
+```
+
+## Error Handling
+
+```python
+from alphafold3.data import templates
+
+try:
+    templates_obj = templates.Templates.from_hmmsearch_a3m(
+        query_sequence=query_seq,
+        a3m=hmmsearch_a3m,
+        max_template_date=max_date,
+        structure_store=store
+    )
+    
+    filtered = templates_obj.filter(
+        max_subsequence_ratio=0.95,
+        min_align_ratio=0.1,
+        min_hit_length=20,
+        deduplicate_sequences=True,
+        max_hits=20
+    )
+    
+    features = filtered.featurize()
+    
+except templates.HitDateError as e:
+    print(f"Template date error: {e}")
+except templates.InvalidTemplateError as e:
+    print(f"Invalid template: {e}")
+except ValueError as e:
+    print(f"Validation error: {e}")
+```
+
+## Related Modules
+
+- [Featurisation](/api/data/featurisation) - Overall input featurisation pipeline
+- [MSA Processing](/api/data/msa) - Multiple sequence alignment handling

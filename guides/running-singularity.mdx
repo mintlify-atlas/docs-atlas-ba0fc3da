@@ -1,0 +1,504 @@
+---
+title: 'Running with Singularity'
+description: 'How to run AlphaFold 3 using Singularity containers'
+icon: 'box'
+---
+
+## Overview
+
+Singularity (now Apptainer) is an alternative to Docker commonly used in HPC environments. AlphaFold 3 can run in Singularity containers built from Docker images.
+
+<Note>
+You still need to **build** the Docker image first, then convert it to Singularity format.
+</Note>
+
+## Prerequisites
+
+<Steps>
+  <Step title="Docker Installed">
+    Required to build the initial Docker image
+  </Step>
+  <Step title="Singularity Installed">
+    Version 3.3+ or Apptainer
+  </Step>
+  <Step title="NVIDIA GPU">
+    With drivers installed on host
+  </Step>
+  <Step title="Databases Downloaded">
+    Same databases as Docker setup
+  </Step>
+</Steps>
+
+## Installation
+
+### Installing Singularity
+
+<Tabs>
+  <Tab title="Ubuntu 22.04">
+    Download and install the Singularity package:
+    
+    ```bash
+    wget https://github.com/sylabs/singularity/releases/download/v4.2.1/singularity-ce_4.2.1-jammy_amd64.deb
+    sudo dpkg --install singularity-ce_4.2.1-jammy_amd64.deb
+    sudo apt-get install -f
+    ```
+    
+    Verify installation:
+    
+    ```bash
+    singularity --version
+    ```
+  </Tab>
+  
+  <Tab title="From Source">
+    For other distributions, build from source:
+    
+    ```bash
+    # Install dependencies
+    sudo apt-get update
+    sudo apt-get install -y build-essential libssl-dev uuid-dev \
+      libgpgme11-dev squashfs-tools libseccomp-dev wget pkg-config \
+      git cryptsetup
+    
+    # Install Go
+    export VERSION=1.20.5 OS=linux ARCH=amd64
+    wget https://dl.google.com/go/go$VERSION.$OS-$ARCH.tar.gz
+    sudo tar -C /usr/local -xzvf go$VERSION.$OS-$ARCH.tar.gz
+    rm go$VERSION.$OS-$ARCH.tar.gz
+    
+    echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc
+    source ~/.bashrc
+    
+    # Build Singularity
+    git clone https://github.com/sylabs/singularity.git
+    cd singularity
+    git checkout v4.2.1
+    ./mconfig
+    make -C builddir
+    sudo make -C builddir install
+    ```
+  </Tab>
+</Tabs>
+
+## Building Singularity Image
+
+### Step 1: Build Docker Image
+
+First, build the AlphaFold 3 Docker image:
+
+```bash
+cd alphafold3
+docker build -t alphafold3 -f docker/Dockerfile .
+```
+
+### Step 2: Start Local Docker Registry
+
+Singularity pulls from a Docker registry:
+
+```bash
+docker run -d -p 5000:5000 --restart=always --name registry registry:2
+```
+
+### Step 3: Push to Local Registry
+
+```bash
+docker tag alphafold3 localhost:5000/alphafold3
+docker push localhost:5000/alphafold3
+```
+
+### Step 4: Build Singularity Image
+
+```bash
+SINGULARITY_NOHTTPS=1 singularity build alphafold3.sif docker://localhost:5000/alphafold3:latest
+```
+
+<Note>
+This creates `alphafold3.sif`, a single file containing the entire container.
+</Note>
+
+### Step 5: Verify Build
+
+Test GPU access:
+
+```bash
+singularity exec --nv alphafold3.sif sh -c 'nvidia-smi'
+```
+
+You should see your GPU information.
+
+<Warning>
+If GPU is not detected, you may need to reboot your system.
+</Warning>
+
+## Running AlphaFold 3
+
+### Basic Usage
+
+The Singularity command structure:
+
+```bash
+singularity exec \
+    --nv \
+    --bind <host_dir>:<container_dir> \
+    alphafold3.sif \
+    python run_alphafold.py <args>
+```
+
+<ParamField path="--nv" type="flag" required>
+  Enable NVIDIA GPU support
+</ParamField>
+
+<ParamField path="--bind" type="mount">
+  Mount host directories into container (equivalent to Docker's `--volume`)
+</ParamField>
+
+### Complete Example
+
+```bash
+singularity exec \
+    --nv \
+    --bind $HOME/af_input:/root/af_input \
+    --bind $HOME/af_output:/root/af_output \
+    --bind $HOME/af3_models:/root/models \
+    --bind /path/to/databases:/root/public_databases \
+    alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --db_dir=/root/public_databases \
+    --output_dir=/root/af_output
+```
+
+### Multiple Database Directories
+
+For SSD + HDD setup:
+
+```bash
+singularity exec \
+    --nv \
+    --bind $HOME/af_input:/root/af_input \
+    --bind $HOME/af_output:/root/af_output \
+    --bind $HOME/af3_models:/root/models \
+    --bind /mnt/ssd/databases:/root/public_databases \
+    --bind /mnt/hdd/databases:/root/public_databases_fallback \
+    alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --db_dir=/root/public_databases \
+    --db_dir=/root/public_databases_fallback \
+    --output_dir=/root/af_output
+```
+
+## Running in Stages
+
+### Data Pipeline Only (CPU)
+
+```bash
+singularity exec \
+    --bind $HOME/af_input:/root/af_input \
+    --bind $HOME/af_output:/root/af_output \
+    --bind /path/to/databases:/root/public_databases \
+    alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --db_dir=/root/public_databases \
+    --output_dir=/root/af_output \
+    --norun_inference
+```
+
+<Note>
+No `--nv` flag needed for CPU-only data pipeline.
+</Note>
+
+### Inference Only (GPU)
+
+```bash
+singularity exec \
+    --nv \
+    --bind $HOME/af_output:/root/af_output \
+    --bind $HOME/af3_models:/root/models \
+    alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_output/<job>_data.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output \
+    --norun_data_pipeline
+```
+
+## HPC Integration
+
+### SLURM Example
+
+Create a SLURM batch script:
+
+```bash slurm_alphafold.sh
+#!/bin/bash
+#SBATCH --job-name=alphafold3
+#SBATCH --partition=gpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=12
+#SBATCH --gres=gpu:a100:1
+#SBATCH --mem=170G
+#SBATCH --time=24:00:00
+#SBATCH --output=alphafold_%j.log
+
+module load singularity
+
+singularity exec \
+    --nv \
+    --bind $HOME/af_input:/root/af_input \
+    --bind $HOME/af_output:/root/af_output \
+    --bind $HOME/af3_models:/root/models \
+    --bind /scratch/databases:/root/public_databases \
+    /path/to/alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --db_dir=/root/public_databases \
+    --output_dir=/root/af_output
+```
+
+Submit:
+
+```bash
+sbatch slurm_alphafold.sh
+```
+
+### PBS Example
+
+```bash pbs_alphafold.sh
+#!/bin/bash
+#PBS -N alphafold3
+#PBS -l select=1:ncpus=12:ngpus=1:mem=170gb:gpu_model=a100
+#PBS -l walltime=24:00:00
+#PBS -o alphafold.log
+#PBS -e alphafold.err
+
+cd $PBS_O_WORKDIR
+
+module load singularity
+
+singularity exec \
+    --nv \
+    --bind $HOME/af_input:/root/af_input \
+    --bind $HOME/af_output:/root/af_output \
+    --bind $HOME/af3_models:/root/models \
+    --bind /scratch/databases:/root/public_databases \
+    /path/to/alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --db_dir=/root/public_databases \
+    --output_dir=/root/af_output
+```
+
+Submit:
+
+```bash
+qsub pbs_alphafold.sh
+```
+
+### Array Jobs for Multiple Inputs
+
+```bash slurm_array.sh
+#!/bin/bash
+#SBATCH --job-name=alphafold3_array
+#SBATCH --partition=gpu
+#SBATCH --array=0-9
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --mem=170G
+#SBATCH --time=24:00:00
+
+module load singularity
+
+# Get input file for this array task
+INPUT_FILES=($HOME/af_input/*.json)
+INPUT=${INPUT_FILES[$SLURM_ARRAY_TASK_ID]}
+BASENAME=$(basename $INPUT .json)
+
+singularity exec \
+    --nv \
+    --bind $HOME/af_input:/root/af_input \
+    --bind $HOME/af_output:/root/af_output_${BASENAME} \
+    --bind $HOME/af3_models:/root/models \
+    --bind /scratch/databases:/root/public_databases \
+    alphafold3.sif \
+    python run_alphafold.py \
+    --json_path=/root/af_input/${BASENAME}.json \
+    --model_dir=/root/models \
+    --db_dir=/root/public_databases \
+    --output_dir=/root/af_output_${BASENAME}
+```
+
+## Singularity vs Docker
+
+### Advantages of Singularity
+
+<CardGroup cols={2}>
+  <Card title="No Root Required" icon="user">
+    Runs without root privileges, suitable for HPC
+  </Card>
+  <Card title="Single File" icon="file">
+    `.sif` file is portable and easy to distribute
+  </Card>
+  <Card title="HPC Integration" icon="server">
+    Works with SLURM, PBS, and other schedulers
+  </Card>
+  <Card title="Performance" icon="gauge">
+    Lower overhead on shared filesystems
+  </Card>
+</CardGroup>
+
+### Key Differences
+
+| Feature | Docker | Singularity |
+|---------|--------|-------------|
+| Root access | Usually required | Not required |
+| File format | Layers | Single .sif file |
+| User inside | Root by default | Same as host user |
+| Home directory | Not mounted | Mounted by default |
+| HPC friendly | Limited | Excellent |
+
+## Troubleshooting
+
+### GPU Not Detected
+
+```bash
+# Check NVIDIA drivers on host
+nvidia-smi
+
+# Test GPU in container
+singularity exec --nv alphafold3.sif nvidia-smi
+
+# If still not working, try rebuilding with specific CUDA
+SINGULARITY_NOHTTPS=1 singularity build --force alphafold3.sif docker://localhost:5000/alphafold3:latest
+```
+
+### Bind Mount Errors
+
+<Warning>
+Singularity requires explicit bind mounts. Directories not bound are not accessible.
+</Warning>
+
+```bash
+# Error: cannot access /path/to/databases
+# Solution: Add --bind flag
+--bind /path/to/databases:/root/public_databases
+```
+
+### Permission Issues
+
+```bash
+# Singularity runs as your user by default
+# Ensure output directory is writable
+mkdir -p $HOME/af_output
+chmod 755 $HOME/af_output
+```
+
+### Memory Issues
+
+```bash
+# For HPC, request sufficient memory
+#SBATCH --mem=170G
+
+# Enable unified memory for large inputs
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export TF_FORCE_UNIFIED_MEMORY=true
+export XLA_CLIENT_MEM_FRACTION=3.2
+```
+
+### Build Failures
+
+```bash
+# Clean Docker registry
+docker stop registry
+docker rm registry
+
+# Restart and rebuild
+docker run -d -p 5000:5000 --restart=always --name registry registry:2
+docker tag alphafold3 localhost:5000/alphafold3
+docker push localhost:5000/alphafold3
+
+SINGULARITY_NOHTTPS=1 singularity build --force alphafold3.sif docker://localhost:5000/alphafold3:latest
+```
+
+## Interactive Shell
+
+For debugging, open an interactive shell:
+
+```bash
+singularity shell --nv alphafold3.sif
+```
+
+Inside the container:
+
+```bash
+# Check environment
+echo $PATH
+which python
+
+# Test GPU
+nvidia-smi
+
+# Run AlphaFold
+python run_alphafold.py --help
+```
+
+## Advanced Options
+
+### Writable Container
+
+Create a writable sandbox:
+
+```bash
+singularity build --sandbox alphafold3_sandbox/ alphafold3.sif
+singularity exec --writable alphafold3_sandbox/ python run_alphafold.py ...
+```
+
+### Custom Environment Variables
+
+```bash
+singularity exec \
+    --nv \
+    --env XLA_FLAGS="--xla_gpu_enable_triton_gemm=false" \
+    --env JAX_COMPILATION_CACHE_DIR="/tmp/jax_cache" \
+    alphafold3.sif \
+    python run_alphafold.py ...
+```
+
+### Network Access
+
+```bash
+# Enable network (usually enabled by default)
+singularity exec --net alphafold3.sif python run_alphafold.py ...
+```
+
+## Distribution
+
+The `.sif` file is self-contained and portable:
+
+```bash
+# Copy to another system
+scp alphafold3.sif user@remote:/path/to/destination/
+
+# Or use rsync
+rsync -avz alphafold3.sif user@remote:/path/to/destination/
+```
+
+<Note>
+The `.sif` file is typically 5-10 GB. Ensure sufficient transfer bandwidth and storage.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker Guide" icon="docker" href="/guides/running-docker">
+    Compare with Docker setup
+  </Card>
+  <Card title="Performance" icon="gauge" href="/guides/performance-optimization">
+    Optimize for HPC environments
+  </Card>
+</CardGroup>

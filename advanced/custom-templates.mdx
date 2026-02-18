@@ -1,0 +1,393 @@
+---
+title: Providing Custom Structural Templates
+description: Learn how to provide custom structural templates for protein chains in AlphaFold 3
+---
+
+# Providing Custom Structural Templates
+
+Structural templates can be provided for protein chains to guide the structure prediction. Templates are specified as mmCIF files with explicit mappings between query and template residues.
+
+<Info>
+Structural templates are **only supported for protein chains**. RNA and DNA chains do not support templates.
+</Info>
+
+## Overview
+
+A structural template consists of:
+1. An mmCIF file containing a single protein chain
+2. A mapping from query residue indices to template residue indices
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS",
+    "templates": [
+      {
+        "mmcif": "data_template\n_entry.id template\n...",
+        "queryIndices": [0, 1, 2, 4, 5, 6],
+        "templateIndices": [0, 1, 2, 3, 4, 8]
+      }
+    ]
+  }
+}
+```
+
+## Template Structure
+
+### Required Fields
+
+<Tabs>
+  <Tab title="Inline mmCIF">
+  Provide the mmCIF content directly in the JSON:
+
+  ```json
+  {
+    "templates": [
+      {
+        "mmcif": "data_template\n_entry.id template\n...",
+        "queryIndices": [0, 1, 2, 3],
+        "templateIndices": [0, 1, 2, 3]
+      }
+    ]
+  }
+  ```
+  </Tab>
+
+  <Tab title="External mmCIF File">
+  Reference an external mmCIF file:
+
+  ```json
+  {
+    "templates": [
+      {
+        "mmcifPath": "templates/1abc.cif",
+        "queryIndices": [0, 1, 2, 3],
+        "templateIndices": [0, 1, 2, 3]
+      }
+    ]
+  }
+  ```
+
+  <Info>
+  Paths can be:
+  - **Absolute**: `/home/user/templates/1abc.cif`
+  - **Relative to input JSON**: `../templates/1abc.cif`
+
+  Supported formats:
+  - Plain text (`.cif`, `.mmcif`)
+  - gzip (`.cif.gz`)
+  - xz (`.cif.xz`)
+  - zstd (`.cif.zst`)
+  </Info>
+  </Tab>
+</Tabs>
+
+<Warning>
+The `mmcif` and `mmcifPath` fields are **mutually exclusive**. You must use one or the other, not both.
+</Warning>
+
+### Query and Template Indices
+
+The mapping between query and template residues is defined using two parallel lists:
+
+- **`queryIndices`**: 0-based indices in the query sequence
+- **`templateIndices`**: 0-based indices in the template sequence
+
+<Steps>
+
+<Step title="Understanding the Mapping">
+Each position in `queryIndices` corresponds to the same position in `templateIndices`.
+
+```json
+{
+  "queryIndices":    [0, 1, 2, 3],
+  "templateIndices": [0, 2, 5, 6]
+}
+```
+
+This creates the mapping:
+- Query residue 0 → Template residue 0
+- Query residue 1 → Template residue 2
+- Query residue 2 → Template residue 5
+- Query residue 3 → Template residue 6
+</Step>
+
+<Step title="Handling Unresolved Residues">
+mmCIF files can have residues present in residue tables but missing atom coordinates (unresolved residues). These **must be counted** when specifying template indices.
+
+For example, [PDB 8UXY](https://www.rcsb.org/structure/8UXY) has unresolved residues 1–20.
+
+To align query residues 0–3 with template residues 21–24 (which are residues 4–7 in the mmCIF with 0-based indexing after accounting for unresolved residues 1–20):
+
+```json
+{
+  "queryIndices":    [0, 1, 2, 3],
+  "templateIndices": [20, 21, 22, 23]
+}
+```
+</Step>
+
+<Step title="Multiple Templates">
+You can provide up to **20 templates** per protein chain:
+
+```json
+{
+  "templates": [
+    {
+      "mmcifPath": "templates/template1.cif",
+      "queryIndices": [0, 1, 2, 3],
+      "templateIndices": [0, 1, 2, 3]
+    },
+    {
+      "mmcifPath": "templates/template2.cif",
+      "queryIndices": [5, 6, 7, 8],
+      "templateIndices": [10, 11, 12, 13]
+    }
+  ]
+}
+```
+</Step>
+
+</Steps>
+
+## Template Modes
+
+AlphaFold 3 supports several template usage modes:
+
+<Tabs>
+  <Tab title="Automatic (Default)">
+  Leave `templates` unset. AlphaFold 3 will search for templates automatically:
+
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS"
+    }
+  }
+  ```
+
+  The data pipeline will run Hmmsearch to find structural templates.
+  </Tab>
+
+  <Tab title="Template-Free">
+  Set `templates` to an empty list `[]`:
+
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS",
+      "templates": []
+    }
+  }
+  ```
+
+  The model will run without any structural templates, but MSA will still be computed.
+  </Tab>
+
+  <Tab title="Custom Templates Only">
+  Provide custom templates:
+
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS",
+      "templates": [
+        {
+          "mmcifPath": "my_template.cif",
+          "queryIndices": [0, 1, 2, 3],
+          "templateIndices": [0, 1, 2, 3]
+        }
+      ]
+    }
+  }
+  ```
+
+  Only the specified templates will be used.
+  </Tab>
+
+  <Tab title="MSA with Template Search">
+  Provide custom MSA but let AlphaFold search for templates:
+
+  ```json
+  {
+    "protein": {
+      "id": "A",
+      "sequence": "MQIFVKTLTGKTITLEVEPS",
+      "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n...",
+      "pairedMsa": "",
+      "templates": null
+    }
+  }
+  ```
+
+  The profile for Hmmsearch will be built from the provided `unpairedMsa`.
+  </Tab>
+</Tabs>
+
+## mmCIF Requirements
+
+<Warning>
+The mmCIF file must contain **exactly one protein chain**. Multi-chain mmCIFs will cause an error.
+</Warning>
+
+### Valid Single-Chain mmCIF
+
+```cif
+data_template
+_entry.id template
+#
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.label_asym_id
+_atom_site.label_comp_id
+_atom_site.label_seq_id
+_atom_site.label_atom_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM   1    A   MET   1    N     10.123  20.456  30.789
+ATOM   2    A   MET   1    CA    11.234  21.567  31.890
+...
+```
+
+## Complete Examples
+
+### Example 1: Single Custom Template
+
+```json
+{
+  "name": "Protein with custom template",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTLTGKTITLEVEPS",
+        "description": "Protein with one custom template",
+        "templates": [
+          {
+            "mmcifPath": "templates/7bz5.cif",
+            "queryIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "templateIndices": [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+          }
+        ]
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+### Example 2: Template-Free with Custom MSA
+
+```json
+{
+  "name": "Template-free prediction",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTLTGKTITLEVEPS",
+        "description": "No templates, custom MSA",
+        "unpairedMsa": ">query\nMQIFVKTLTGKTITLEVEPS\n>hit1\nMQIFVKTL-GKTITLEVEPS",
+        "pairedMsa": "",
+        "templates": []
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+### Example 3: Multiple Templates with Gaps
+
+```json
+{
+  "name": "Multiple templates",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTLTGKTITLEVEPSRDWHALE",
+        "templates": [
+          {
+            "mmcifPath": "templates/template1.cif",
+            "queryIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "templateIndices": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+          },
+          {
+            "mmcifPath": "templates/template2.cif",
+            "queryIndices": [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26],
+            "templateIndices": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+          }
+        ]
+      }
+    }
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+## Advanced: Explicitly Setting Templates to Null
+
+<CodeGroup>
+
+```json Explicit Null (Auto-search)
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS",
+    "templates": null
+  }
+}
+```
+
+```json Omitted (Auto-search)
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MQIFVKTLTGKTITLEVEPS"
+  }
+}
+```
+
+</CodeGroup>
+
+Both approaches are equivalent and will trigger automatic template search.
+
+## Code Reference
+
+From `folding_input.py:86-121`:
+```python
+class Template:
+  """Structural template input."""
+
+  def __init__(self, *, mmcif: str, query_to_template_map: Mapping[int, int]):
+    """Initializes the template.
+
+    Args:
+      mmcif: The structural template in mmCIF format. The mmCIF should have
+        only one protein chain.
+      query_to_template_map: A mapping from query residue index to template
+        residue index.
+    """
+    self._mmcif = mmcif
+    self._query_to_template = tuple(query_to_template_map.items())
+```
+
+From `folding_input.py:165-167`:
+```python
+templates: Sequence[Template] | None = None
+# If None, this field is unset and must be filled in by the data
+# pipeline before featurisation.
+```

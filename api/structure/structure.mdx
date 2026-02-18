@@ -1,0 +1,678 @@
+---
+title: 'Structure'
+description: 'Core Structure class for representing and processing molecular structures'
+---
+
+## Overview
+
+The `Structure` class is the primary data structure for representing molecular structures in AlphaFold 3. It provides a comprehensive interface for working with protein, DNA, RNA, ligand, and other molecular entities.
+
+## Class Definition
+
+```python
+from alphafold3.structure import Structure
+```
+
+The `Structure` class represents molecular structures with a hierarchical organization:
+- **Chains**: Individual molecular chains (proteins, nucleic acids, ligands)
+- **Residues**: Amino acids, nucleotides, or chemical components
+- **Atoms**: Individual atomic coordinates and properties
+- **Bonds**: Chemical bonds between atoms
+
+## Constructor
+
+```python
+Structure(
+    *,
+    name: str = 'unset',
+    release_date: datetime.date | None = None,
+    resolution: float | None = None,
+    structure_method: str | None = None,
+    bioassembly_data: BioassemblyData | None = None,
+    chemical_components_data: ChemicalComponentsData | None = None,
+    chains: Chains,
+    residues: Residues,
+    atoms: Atoms,
+    bonds: Bonds,
+    skip_validation: bool = False
+)
+```
+
+<ParamField path="name" type="str" default="'unset'">
+  Name or identifier for the structure (e.g., PDB ID)
+</ParamField>
+
+<ParamField path="release_date" type="datetime.date | None" default="None">
+  Release date of the structure
+</ParamField>
+
+<ParamField path="resolution" type="float | None" default="None">
+  Resolution of the structure in Angstroms (for experimental structures)
+</ParamField>
+
+<ParamField path="structure_method" type="str | None" default="None">
+  Experimental method used (e.g., 'x-ray diffraction', 'electron microscopy')
+</ParamField>
+
+<ParamField path="bioassembly_data" type="BioassemblyData | None" default="None">
+  Biological assembly information
+</ParamField>
+
+<ParamField path="chemical_components_data" type="ChemicalComponentsData | None" default="None">
+  Chemical component dictionary data for non-standard residues
+</ParamField>
+
+<ParamField path="chains" type="Chains" required>
+  Table containing chain-level data (IDs, types, entity information)
+</ParamField>
+
+<ParamField path="residues" type="Residues" required>
+  Table containing residue-level data (names, IDs, author naming)
+</ParamField>
+
+<ParamField path="atoms" type="Atoms" required>
+  Table containing atomic data (names, elements, coordinates, b-factors)
+</ParamField>
+
+<ParamField path="bonds" type="Bonds" required>
+  Table containing bond connectivity information
+</ParamField>
+
+<ParamField path="skip_validation" type="bool" default="False">
+  Skip validation of foreign keys and table ordering (use with caution)
+</ParamField>
+
+## Properties
+
+### Structure Metadata
+
+<ResponseField name="name" type="str">
+  Structure name or identifier
+</ResponseField>
+
+<ResponseField name="release_date" type="datetime.date | None">
+  Structure release date
+</ResponseField>
+
+<ResponseField name="resolution" type="float | None">
+  Structure resolution in Angstroms
+</ResponseField>
+
+<ResponseField name="structure_method" type="str | None">
+  Experimental method used to determine the structure
+</ResponseField>
+
+<ResponseField name="num_atoms" type="int">
+  Total number of atoms in the structure
+</ResponseField>
+
+<ResponseField name="num_chains" type="int">
+  Total number of chains in the structure
+</ResponseField>
+
+<ResponseField name="num_models" type="int">
+  Number of models (for NMR structures or ensembles)
+</ResponseField>
+
+### Tables
+
+<ResponseField name="chains_table" type="Chains">
+  Access to the chains table with chain-level data
+</ResponseField>
+
+<ResponseField name="residues_table" type="Residues">
+  Access to the residues table with residue-level data
+</ResponseField>
+
+<ResponseField name="atoms_table" type="Atoms">
+  Access to the atoms table with atomic data
+</ResponseField>
+
+<ResponseField name="bonds_table" type="Bonds">
+  Access to the bonds table with connectivity information
+</ResponseField>
+
+<ResponseField name="present_chains" type="Chains">
+  Table of chains that have at least one resolved atom
+</ResponseField>
+
+<ResponseField name="present_residues" type="Residues">
+  Table of residues that have at least one resolved atom
+</ResponseField>
+
+<ResponseField name="unresolved_residues" type="Residues">
+  Table of residues with no resolved atoms (missing from structure)
+</ResponseField>
+
+### Atom-Level Arrays
+
+<ResponseField name="atom_key" type="np.ndarray">
+  Unique integer keys for each atom
+</ResponseField>
+
+<ResponseField name="atom_name" type="np.ndarray">
+  Atom names (e.g., 'CA', 'N', 'C', 'O')
+</ResponseField>
+
+<ResponseField name="atom_element" type="np.ndarray">
+  Element symbols (e.g., 'C', 'N', 'O', 'S')
+</ResponseField>
+
+<ResponseField name="atom_x" type="np.ndarray">
+  X coordinates in Angstroms
+</ResponseField>
+
+<ResponseField name="atom_y" type="np.ndarray">
+  Y coordinates in Angstroms
+</ResponseField>
+
+<ResponseField name="atom_z" type="np.ndarray">
+  Z coordinates in Angstroms
+</ResponseField>
+
+<ResponseField name="atom_b_factor" type="np.ndarray">
+  B-factors (temperature factors) for each atom
+</ResponseField>
+
+<ResponseField name="atom_occupancy" type="np.ndarray">
+  Occupancy values for each atom (typically 1.0)
+</ResponseField>
+
+<ResponseField name="chain_id" type="np.ndarray">
+  Chain ID for each atom (internal label_asym_id)
+</ResponseField>
+
+<ResponseField name="chain_type" type="np.ndarray">
+  Chain type for each atom (e.g., 'polypeptide(L)', 'polyribonucleotide')
+</ResponseField>
+
+<ResponseField name="chain_auth_asym_id" type="np.ndarray">
+  Author chain ID for each atom (from original PDB file)
+</ResponseField>
+
+<ResponseField name="chain_entity_id" type="np.ndarray">
+  Entity ID for each atom
+</ResponseField>
+
+<ResponseField name="chain_entity_desc" type="np.ndarray">
+  Entity description for each atom
+</ResponseField>
+
+<ResponseField name="res_id" type="np.ndarray">
+  Residue sequence ID for each atom (1-indexed)
+</ResponseField>
+
+<ResponseField name="res_name" type="np.ndarray">
+  Residue names for each atom (e.g., 'ALA', 'DA', 'U', 'HOH')
+</ResponseField>
+
+<ResponseField name="res_auth_seq_id" type="np.ndarray">
+  Author residue sequence ID for each atom
+</ResponseField>
+
+<ResponseField name="res_insertion_code" type="np.ndarray">
+  Insertion codes for each atom
+</ResponseField>
+
+### Masks
+
+<ResponseField name="is_protein_mask" type="np.ndarray">
+  Boolean mask indicating protein atoms
+</ResponseField>
+
+<ResponseField name="is_dna_mask" type="np.ndarray">
+  Boolean mask indicating DNA atoms
+</ResponseField>
+
+<ResponseField name="is_rna_mask" type="np.ndarray">
+  Boolean mask indicating RNA atoms
+</ResponseField>
+
+<ResponseField name="is_nucleic_mask" type="np.ndarray">
+  Boolean mask indicating all nucleic acid atoms (DNA or RNA)
+</ResponseField>
+
+<ResponseField name="is_ligand_mask" type="np.ndarray">
+  Boolean mask indicating ligand atoms
+</ResponseField>
+
+<ResponseField name="is_water_mask" type="np.ndarray">
+  Boolean mask indicating water molecules
+</ResponseField>
+
+## Methods
+
+### num_residues
+
+```python
+def num_residues(*, count_unresolved: bool) -> int
+```
+
+Returns the number of residues in the structure.
+
+<ParamField path="count_unresolved" type="bool" required>
+  If True, includes unresolved residues (missing from coordinates). If False, only counts residues with at least one resolved atom.
+</ParamField>
+
+**Returns:** Number of residues in the structure
+
+**Example:**
+
+```python
+# Count only resolved residues
+resolved_count = structure.num_residues(count_unresolved=False)
+
+# Count all residues including missing ones
+total_count = structure.num_residues(count_unresolved=True)
+```
+
+### filter
+
+```python
+def filter(
+    mask: np.ndarray | None = None,
+    *,
+    apply_per_element: bool = False,
+    invert: bool = False,
+    cascade_delete: CascadeDelete = CascadeDelete.CHAINS,
+    **predicate_by_field_name
+) -> Structure
+```
+
+Filters the structure by field values and returns a new structure.
+
+<ParamField path="mask" type="np.ndarray | None" default="None">
+  Optional boolean array with length equal to num_atoms for direct masking
+</ParamField>
+
+<ParamField path="apply_per_element" type="bool" default="False">
+  Whether to apply predicates to each element individually or to the whole column array
+</ParamField>
+
+<ParamField path="invert" type="bool" default="False">
+  If True, removes entities matching the predicates instead of retaining them
+</ParamField>
+
+<ParamField path="cascade_delete" type="CascadeDelete" default="CascadeDelete.CHAINS">
+  Controls deletion of unresolved residues/chains:
+  - `FULL`: Delete all unresolved residues and empty chains
+  - `CHAINS`: Delete only chains with no resolved residues (default)
+  - `NONE`: Keep all unresolved residues and chains
+</ParamField>
+
+<ParamField path="**predicate_by_field_name" type="FilterPredicate">
+  Field-based filters using pattern `<table>_<column>` (e.g., `chain_id='A'`, `atom_name=('CA', 'N')`)
+</ParamField>
+
+**Returns:** Filtered Structure object
+
+**Example:**
+
+```python
+# Filter to chain A, backbone atoms only
+filtered = structure.filter(
+    chain_id='A',
+    atom_name=('N', 'CA', 'C', 'O')
+)
+
+# Filter to residues 1-100
+filtered = structure.filter(
+    res_id=lambda res_id: res_id <= 100
+)
+
+# Filter by multiple chains
+filtered = structure.filter(
+    chain_id=('A', 'B', 'C')
+)
+
+# Filter using a boolean mask
+low_bfactor_mask = structure.atom_b_factor < 50.0
+filtered = structure.filter(low_bfactor_mask)
+```
+
+### filter_out
+
+```python
+def filter_out(*args, **kwargs) -> Structure
+```
+
+Removes entities matching the predicates (inverse of `filter`).
+
+Same parameters as `filter()` but with `invert=True` applied automatically.
+
+**Example:**
+
+```python
+# Remove water molecules
+no_water = structure.filter_out(res_name='HOH')
+
+# Remove high B-factor atoms
+filtered = structure.filter_out(
+    atom_b_factor=lambda b: b > 100.0
+)
+```
+
+### filter_to_entity_type
+
+```python
+def filter_to_entity_type(
+    *,
+    protein: bool = True,
+    dna: bool = True,
+    rna: bool = True,
+    ligand: bool = True
+) -> Structure
+```
+
+Filters structure to specific entity types.
+
+<ParamField path="protein" type="bool" default="True">
+  Include protein chains
+</ParamField>
+
+<ParamField path="dna" type="bool" default="True">
+  Include DNA chains
+</ParamField>
+
+<ParamField path="rna" type="bool" default="True">
+  Include RNA chains
+</ParamField>
+
+<ParamField path="ligand" type="bool" default="True">
+  Include ligand molecules
+</ParamField>
+
+**Example:**
+
+```python
+# Get only protein chains
+protein_only = structure.filter_to_entity_type(
+    protein=True,
+    dna=False,
+    rna=False,
+    ligand=False
+)
+
+# Get protein and nucleic acids only
+no_ligands = structure.filter_to_entity_type(ligand=False)
+```
+
+### to_mmcif
+
+```python
+def to_mmcif(*, coords_decimal_places: int = 3) -> str
+```
+
+Converts the structure to an mmCIF format string.
+
+<ParamField path="coords_decimal_places" type="int" default="3">
+  Number of decimal places for atomic coordinates
+</ParamField>
+
+**Returns:** String representation in mmCIF format
+
+**Example:**
+
+```python
+# Write structure to mmCIF file
+mmcif_string = structure.to_mmcif()
+with open('output.cif', 'w') as f:
+    f.write(mmcif_string)
+
+# Higher precision coordinates
+high_precision = structure.to_mmcif(coords_decimal_places=5)
+```
+
+### to_mmcif_dict
+
+```python
+def to_mmcif_dict(*, coords_decimal_places: int = 3) -> Mmcif
+```
+
+Returns an Mmcif (CifDict) object representing the structure.
+
+**Returns:** Mmcif dictionary object
+
+### iter_atoms
+
+```python
+def iter_atoms() -> Iterator[Mapping[str, Any]]
+```
+
+Iterates over all atoms in the structure, yielding dictionaries with atom, residue, and chain information.
+
+**Returns:** Iterator of dictionaries with atom properties
+
+**Example:**
+
+```python
+for atom in structure.iter_atoms():
+    print(f"Chain {atom['chain_id']}, "
+          f"Residue {atom['res_name']} {atom['res_id']}, "
+          f"Atom {atom['atom_name']}: "
+          f"({atom['atom_x']}, {atom['atom_y']}, {atom['atom_z']})")
+```
+
+### iter_residues
+
+```python
+def iter_residues(include_unresolved: bool = False) -> Iterator[Mapping[str, Any]]
+```
+
+Iterates over residues in the structure.
+
+<ParamField path="include_unresolved" type="bool" default="False">
+  If True, includes residues with no resolved atoms
+</ParamField>
+
+**Returns:** Iterator of dictionaries with residue and chain properties
+
+**Example:**
+
+```python
+for residue in structure.iter_residues():
+    print(f"Chain {residue['chain_id']}: "
+          f"{residue['res_name']} {residue['res_id']}")
+```
+
+### copy_and_update
+
+```python
+def copy_and_update(**updates) -> Structure
+```
+
+Creates a copy of the structure with specified fields updated.
+
+<ParamField path="**updates">
+  Keyword arguments for fields to update (e.g., `name='new_name'`, `atom_x=new_coords`)
+</ParamField>
+
+**Returns:** New Structure with updated fields
+
+**Example:**
+
+```python
+# Update structure name
+renamed = structure.copy_and_update(name='my_protein')
+
+# Update atomic coordinates
+new_coords = structure.atom_x + 10.0  # Translate by 10 Angstroms
+translated = structure.copy_and_update(atom_x=new_coords)
+```
+
+### copy_and_update_coords
+
+```python
+def copy_and_update_coords(coords: np.ndarray) -> Structure
+```
+
+Updates atomic coordinates with a new coordinate array.
+
+<ParamField path="coords" type="np.ndarray" required>
+  New coordinates array with shape `(..., num_atoms, 3)` containing [x, y, z] coordinates
+</ParamField>
+
+**Returns:** New Structure with updated coordinates
+
+**Example:**
+
+```python
+# Update all coordinates
+new_coords = np.random.randn(structure.num_atoms, 3)
+updated = structure.copy_and_update_coords(new_coords)
+```
+
+## Factory Functions
+
+### from_mmcif
+
+```python
+from alphafold3.structure import from_mmcif
+
+structure = from_mmcif(
+    mmcif_string: str | bytes,
+    *,
+    name: str | None = None,
+    fix_mse_residues: bool = False,
+    fix_arginines: bool = False,
+    fix_unknown_dna: bool = False,
+    include_water: bool = False,
+    include_other: bool = False,
+    include_bonds: bool = False,
+    model_id: int | ModelID = ModelID.FIRST
+) -> Structure
+```
+
+Constructs a Structure from an mmCIF string or file contents.
+
+<ParamField path="mmcif_string" type="str | bytes" required>
+  Contents of an mmCIF file
+</ParamField>
+
+<ParamField path="name" type="str | None" default="None">
+  Optional structure name (defaults to mmCIF data_ field)
+</ParamField>
+
+<ParamField path="fix_mse_residues" type="bool" default="False">
+  Convert selenomethionine (MSE) SE atoms to SD (sulphur)
+</ParamField>
+
+<ParamField path="fix_arginines" type="bool" default="False">
+  Swap NH1/NH2 in arginine to ensure NH1 is closer to CD
+</ParamField>
+
+<ParamField path="fix_unknown_dna" type="bool" default="False">
+  Replace 'N' residue names in DNA chains with 'DN'
+</ParamField>
+
+<ParamField path="include_water" type="bool" default="False">
+  Include water (HOH) molecules
+</ParamField>
+
+<ParamField path="include_other" type="bool" default="False">
+  Include non-standard entity types
+</ParamField>
+
+<ParamField path="include_bonds" type="bool" default="False">
+  Parse and include bond connectivity information
+</ParamField>
+
+<ParamField path="model_id" type="int | ModelID" default="ModelID.FIRST">
+  Which model to parse (integer ID, `ModelID.FIRST`, or `ModelID.ALL`)
+</ParamField>
+
+**Returns:** Structure object
+
+**Example:**
+
+```python
+from alphafold3.structure import from_mmcif
+
+# Load from file
+with open('structure.cif', 'r') as f:
+    mmcif_string = f.read()
+
+structure = from_mmcif(
+    mmcif_string,
+    name='my_structure',
+    include_water=True,
+    include_bonds=True
+)
+
+print(f"Loaded structure with {structure.num_atoms} atoms")
+```
+
+### from_res_arrays
+
+```python
+from alphafold3.structure import from_res_arrays
+
+structure = from_res_arrays(
+    atom_mask: np.ndarray,
+    **kwargs
+) -> Structure
+```
+
+Creates a Structure from arrays with a residue dimension.
+
+<ParamField path="atom_mask" type="np.ndarray" required>
+  Shape `(num_res, num_atom)` indicating which atoms are present (nonzero = present)
+</ParamField>
+
+<ParamField path="**kwargs">
+  Field name to values mapping. Arrays should have shape `(num_res,)` for chain/residue fields or `(num_res, num_atom)` for atom fields
+</ParamField>
+
+**Example:**
+
+```python
+from alphafold3.structure import from_res_arrays
+import numpy as np
+
+num_res = 100
+num_atom = 37  # Standard atom types
+
+atom_mask = np.random.rand(num_res, num_atom) > 0.5
+atom_positions = np.random.randn(num_res, num_atom, 3)
+res_names = np.array(['ALA'] * num_res)
+
+structure = from_res_arrays(
+    atom_mask=atom_mask,
+    atom_x=atom_positions[..., 0],
+    atom_y=atom_positions[..., 1],
+    atom_z=atom_positions[..., 2],
+    res_name=res_names,
+    name='generated_structure'
+)
+```
+
+## Related Types
+
+### CascadeDelete
+
+```python
+from alphafold3.structure import CascadeDelete
+
+class CascadeDelete(enum.Enum):
+    NONE = 0   # Keep all unresolved residues and chains
+    FULL = 1   # Delete all unresolved residues and empty chains
+    CHAINS = 2 # Delete only chains with no resolved residues (default)
+```
+
+### Bond
+
+```python
+from alphafold3.structure import Bond
+
+class Bond(NamedTuple):
+    from_atom: Mapping[str, str | int | float | np.ndarray]
+    dest_atom: Mapping[str, str | int | float | np.ndarray]
+    bond_info: Mapping[str, str | int]
+```
+
+Represents a chemical bond between two atoms.
+
+## See Also
+
+- [mmCIF Parsing Utilities](/api/structure/mmcif) - Functions for parsing mmCIF files
+- [Structure Tables](/api/structure/structure) - Chains, Residues, Atoms, and Bonds tables

@@ -1,0 +1,200 @@
+---
+title: AlphaFold 3 - Accurate Biomolecular Structure Prediction
+description: Implementation of the AlphaFold 3 inference pipeline for predicting protein, RNA, DNA, and ligand structures with state-of-the-art accuracy
+---
+
+<img src="/images/alphafold3-header.jpg" alt="AlphaFold 3" />
+
+# AlphaFold 3
+
+This package provides an implementation of the inference pipeline of AlphaFold 3 - a revolutionary AI system for predicting the structure and interactions of biomolecules with unprecedented accuracy.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Run your first structure prediction in minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Complete setup guide with Docker and dependencies
+  </Card>
+  <Card title="Request Model Parameters" icon="key" href="/obtaining-model-parameters">
+    Get access to AlphaFold 3 model weights
+  </Card>
+  <Card title="AlphaFold Server" icon="cloud" href="https://alphafoldserver.com">
+    Use AlphaFold 3 online for non-commercial research
+  </Card>
+</CardGroup>
+
+## Overview
+
+AlphaFold 3 extends the capabilities of previous versions to predict structures of:
+
+- **Proteins** with post-translational modifications
+- **RNA and DNA** with modified nucleotides
+- **Ligands** using SMILES or CCD codes
+- **Protein-ligand complexes** with covalent bonds
+- **Biomolecular interactions** across all molecule types
+
+<Info>
+  Any publication using this source code, model parameters, or outputs should cite the [Accurate structure prediction of biomolecular interactions with AlphaFold 3](https://doi.org/10.1038/s41586-024-07487-w) paper published in Nature.
+</Info>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multi-Molecule Predictions" icon="dna">
+    Predict structures for proteins, RNA, DNA, ligands, and their complexes in a single model
+  </Card>
+  <Card title="Custom Ligands" icon="flask">
+    Support for CCD codes, SMILES strings, and user-defined chemical components
+  </Card>
+  <Card title="Covalent Modifications" icon="link">
+    Model covalent bonds between entities and post-translational modifications
+  </Card>
+  <Card title="High Confidence Metrics" icon="chart-line">
+    Per-atom pLDDT, PAE, pTM and ipTM confidence scores
+  </Card>
+  <Card title="Custom MSA & Templates" icon="layer-group">
+    Provide your own multiple sequence alignments and structural templates
+  </Card>
+  <Card title="GPU Optimized" icon="microchip">
+    Efficient inference on NVIDIA A100 and H100 GPUs
+  </Card>
+</CardGroup>
+
+## System Requirements
+
+<Warning>
+  AlphaFold 3 requires Linux and does not support other operating systems. Full installation requires up to 1 TB of disk space for genetic databases.
+</Warning>
+
+### Minimum Hardware
+
+- **OS**: Linux (Ubuntu 22.04 LTS recommended)
+- **GPU**: NVIDIA GPU with Compute Capability 8.0+ (A100 80GB or H100 80GB officially supported)
+- **RAM**: 64 GB minimum (more for deep MSAs)
+- **Storage**: 1 TB SSD recommended for genetic databases
+- **CUDA**: Version 12.6+
+
+### Supported Input Sizes
+
+- Up to **5,120 tokens** on NVIDIA A100 80 GB
+- Up to **5,120 tokens** on NVIDIA H100 80 GB
+- Smaller inputs supported on GPUs with less memory
+
+## Input Format
+
+AlphaFold 3 uses a flexible JSON input format that allows you to specify:
+
+<CodeGroup>
+```json Simple Protein
+{
+  "name": "2PV7",
+  "sequences": [
+    {
+      "protein": {
+        "id": ["A", "B"],
+        "sequence": "GMRESYANENQFGFKTINSDIHKIVIVGGYGKLGGLFARYLRASGYPISILDREDWAVAESILANADVVIVSVPINLTLETIERLKPYLTENMLLADLTSVKREPLAKMLEVHTGAVLGLHPMFGADIASMAKQVVVRCDGRFPERYEWLLEQIQIWGAKIYQTNATEHDHNMTYIQALRHFSTFANGLHLSKQPINLANLLALSSPIYRLELAMIGRLFAQDAELYADIIMDKSENLAVIETLKQTYDEALTFFENNDRQGFIDAFHKVRDWFGDYSEQFLKESRQLLQQANDLKQG"
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+```json Protein-Ligand Complex
+{
+  "name": "protein_with_atp",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKVLWAALLVTFLAGCQAKV..."
+      }
+    },
+    {
+      "ligand": {
+        "id": "B",
+        "ccdCodes": ["ATP"]
+      }
+    }
+  ],
+  "modelSeeds": [1, 2, 3],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+```json RNA Structure
+{
+  "name": "rna_prediction",
+  "sequences": [
+    {
+      "rna": {
+        "id": "R",
+        "sequence": "AGCUAGCUAGCU",
+        "modifications": [
+          {"modificationType": "2MG", "basePosition": 1}
+        ]
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+</CodeGroup>
+
+## Output Structure
+
+AlphaFold 3 produces comprehensive outputs including:
+
+- **Predicted structures** in mmCIF format
+- **Confidence metrics** including pLDDT, PAE, pTM, and ipTM scores
+- **Per-atom confidence** estimates
+- **Ranking scores** across multiple seeds and samples
+- **Optional embeddings** for downstream analysis
+
+## Terms of Use
+
+<Warning>
+  You may only use AlphaFold 3 model parameters if received directly from Google. Use is subject to the [AlphaFold 3 Model Parameters Terms of Use](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md).
+</Warning>
+
+### Important Disclaimers
+
+- AlphaFold 3 and its outputs are for **theoretical modeling only**
+- **Not intended, validated, or approved for clinical use**
+- Do not use for clinical purposes or rely on for medical advice
+- Predictions have varying confidence levels - interpret carefully
+- Source code is licensed under **CC-BY-NC-SA 4.0** (non-commercial use)
+
+## Get Started
+
+<CardGroup cols={3}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Set up AlphaFold 3 with Docker on Linux
+  </Card>
+  <Card title="Quick Start" icon="play" href="/quickstart">
+    Run your first prediction
+  </Card>
+  <Card title="Request Access" icon="key" href="/obtaining-model-parameters">
+    Get model parameters from Google DeepMind
+  </Card>
+</CardGroup>
+
+## Get in Touch
+
+If you have any questions not covered in this documentation, please contact the AlphaFold team at [alphafold@google.com](mailto:alphafold@google.com).
+
+We would love to hear your feedback and understand how AlphaFold 3 has been useful in your research.
+
+---
+
+<Note>
+  This is not an officially supported Google product.
+  
+  Copyright 2024 DeepMind Technologies Limited.
+</Note>

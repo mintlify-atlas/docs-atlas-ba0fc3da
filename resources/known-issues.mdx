@@ -1,0 +1,91 @@
+---
+title: "Known Issues"
+description: "Known issues and workarounds for AlphaFold 3"
+---
+
+## Numerical Performance for CUDA Capability 7.x GPUs
+
+<Warning>
+  All CUDA Capability 7.x GPUs (e.g. V100) produce obviously bad output, with lots of clashing residues.
+</Warning>
+
+### Issue Description
+
+When running AlphaFold 3 on CUDA Capability 7.x GPUs (such as the V100), the model produces poor quality predictions with:
+- Lots of clashing residues
+- Ranking scores of -99 or lower
+- Generally unusable output
+
+### Workaround
+
+Set the `XLA_FLAGS` environment variable to include the following flag:
+
+```bash
+export XLA_FLAGS="--xla_disable_hlo_passes=custom-kernel-fusion-rewriter"
+```
+
+When running with Docker, pass this environment variable:
+
+```bash
+docker run -it \
+    --env XLA_FLAGS="--xla_disable_hlo_passes=custom-kernel-fusion-rewriter" \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    --volume <DATABASES_DIR>:/root/public_databases \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output
+```
+
+### Affected Hardware
+
+- NVIDIA V100 GPUs
+- All other CUDA Capability 7.x GPUs
+
+---
+
+## Incorrect Handling of Two-Letter Atoms in SMILES Ligands
+
+<Info>
+  This issue was fixed in commit [4e4023c](https://github.com/google-deepmind/alphafold3/commit/4e4023c).
+</Info>
+
+### Issue Description
+
+Between commits [f8df1c7](https://github.com/google-deepmind/alphafold3/commit/f8df1c7) and [4e4023c](https://github.com/google-deepmind/alphafold3/commit/4e4023c), AlphaFold 3 handled incorrectly any two-letter atoms in ligands defined using SMILES strings.
+
+### Affected Atoms
+
+Two-letter atoms such as:
+- Chlorine (Cl)
+- Bromine (Br)
+- Other two-letter atomic symbols
+
+### Resolution
+
+This issue has been resolved in the current version. If you are using an older version of AlphaFold 3, please update to the latest version or ensure you are using a commit after [4e4023c](https://github.com/google-deepmind/alphafold3/commit/4e4023c).
+
+---
+
+## Reporting New Issues
+
+<Note>
+  If you encounter an issue not listed here, please check the [GitHub issues tracker](https://github.com/google-deepmind/alphafold3/issues) first.
+</Note>
+
+To report a new issue:
+
+1. Check if the issue already exists in the [issues tracker](https://github.com/google-deepmind/alphafold3/issues)
+2. If not found, [create a new issue](https://github.com/google-deepmind/alphafold3/issues/new/choose)
+3. Provide detailed information about:
+   - Your hardware configuration
+   - AlphaFold 3 version
+   - Input JSON structure
+   - Error messages or unexpected behavior
+   - Steps to reproduce
+
+For additional support, contact the AlphaFold team at [alphafold@google.com](mailto:alphafold@google.com).

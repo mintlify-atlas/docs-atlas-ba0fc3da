@@ -1,0 +1,180 @@
+---
+title: "Featurisation Module"
+description: "Convert folding inputs into model-ready feature batches for AlphaFold 3 prediction."
+---
+
+## Overview
+
+The featurisation module transforms validated folding inputs into feature batches that the AlphaFold 3 model can process. It handles the conversion of protein, RNA, DNA, and ligand inputs into the numerical representations required for structure prediction.
+
+## Functions
+
+### validate_fold_input
+
+Validates that a fold input contains all required MSA and template data for featurisation.
+
+```python
+def validate_fold_input(fold_input: folding_input.Input) -> None
+```
+
+<ParamField path="fold_input" type="folding_input.Input" required>
+  The folding input to validate. Must contain MSA and template data for all protein and RNA chains.
+</ParamField>
+
+**Raises:**
+- `ValueError`: If any protein chain is missing unpaired MSA, paired MSA, or templates
+- `ValueError`: If any RNA chain is missing unpaired MSA
+
+**Example:**
+
+```python
+from alphafold3.data import featurisation
+from alphafold3.common import folding_input
+
+# Create a fold input
+fold_input = folding_input.Input(
+    protein_chains=[...],
+    rna_chains=[...],
+    rng_seeds=[0, 1, 2]
+)
+
+# Validate before featurisation
+try:
+    featurisation.validate_fold_input(fold_input)
+    print("Input is valid")
+except ValueError as e:
+    print(f"Validation failed: {e}")
+```
+
+---
+
+### featurise_input
+
+Featurises a folding input and returns model-ready feature batches.
+
+```python
+def featurise_input(
+    fold_input: folding_input.Input,
+    ccd: chemical_components.Ccd,
+    buckets: Sequence[int] | None,
+    ref_max_modified_date: datetime.date | None = None,
+    conformer_max_iterations: int | None = None,
+    resolve_msa_overlaps: bool = True,
+    verbose: bool = False,
+) -> Sequence[features.BatchDict]
+```
+
+<ParamField path="fold_input" type="folding_input.Input" required>
+  The input to featurise. Must be validated before calling this function.
+</ParamField>
+
+<ParamField path="ccd" type="chemical_components.Ccd" required>
+  The Chemical Component Dictionary containing ligand and modified residue definitions.
+</ParamField>
+
+<ParamField path="buckets" type="Sequence[int] | None" required>
+  Bucket sizes for padding data to avoid model recompilation. If `None`, calculates appropriate bucket size from token count. If provided, must be strictly increasing sequence of at least one integer. Raises error if tokens exceed largest bucket.
+</ParamField>
+
+<ParamField path="ref_max_modified_date" type="datetime.date | None">
+  Maximum date for using CCD model coordinates as fallback when RDKit conformer generation fails and ideal coordinates are unavailable. Only applies to components released before this date.
+</ParamField>
+
+<ParamField path="conformer_max_iterations" type="int | None">
+  Override for maximum RDKit conformer search iterations.
+</ParamField>
+
+<ParamField path="resolve_msa_overlaps" type="bool" default="True">
+  Whether to deduplicate unpaired MSA against paired MSA. Default matches AlphaFold 3 paper methodology. Set to `False` when providing custom paired MSA via unpaired MSA field to preserve exact sequences.
+</ParamField>
+
+<ParamField path="verbose" type="bool" default="False">
+  Whether to print progress messages during featurisation.
+</ParamField>
+
+<ResponseField name="return" type="Sequence[features.BatchDict]">
+  A featurised batch for each RNG seed in the input. Each batch contains all features required for model inference.
+</ResponseField>
+
+**Example:**
+
+```python
+import datetime
+from alphafold3.data import featurisation
+from alphafold3.constants import chemical_components
+
+# Load CCD
+ccd = chemical_components.Ccd()
+
+# Define buckets for padding
+buckets = [256, 384, 512, 768, 1024, 1280, 1536, 2048, 2560, 3072, 3584, 4096, 4608, 5120]
+
+# Featurise input
+batches = featurisation.featurise_input(
+    fold_input=fold_input,
+    ccd=ccd,
+    buckets=buckets,
+    ref_max_modified_date=datetime.date(2021, 1, 1),
+    resolve_msa_overlaps=True,
+    verbose=True
+)
+
+print(f"Generated {len(batches)} feature batches")
+for i, batch in enumerate(batches):
+    print(f"Batch {i} keys: {batch.keys()}")
+```
+
+## Pipeline Integration
+
+The featurisation module uses `WholePdbPipeline` internally to process inputs:
+
+```python
+from alphafold3.model.pipeline import pipeline
+import numpy as np
+
+# Pipeline is configured internally
+data_pipeline = pipeline.WholePdbPipeline(
+    config=pipeline.WholePdbPipeline.Config(
+        buckets=buckets,
+        ref_max_modified_date=ref_max_modified_date,
+        conformer_max_iterations=conformer_max_iterations,
+        resolve_msa_overlaps=resolve_msa_overlaps,
+    ),
+)
+
+# Process for each RNG seed
+for rng_seed in fold_input.rng_seeds:
+    batch = data_pipeline.process_item(
+        fold_input=fold_input,
+        ccd=ccd,
+        random_state=np.random.RandomState(rng_seed),
+        random_seed=rng_seed,
+    )
+```
+
+## Performance Considerations
+
+### Bucketing Strategy
+
+Proper bucket configuration is critical for performance:
+
+- **With buckets**: Data is padded to nearest bucket size, enabling model compilation reuse
+- **Without buckets**: Model recompiles for each unique input size, significantly slower
+- **Bucket selection**: Use exponentially spaced buckets covering expected input sizes
+
+### MSA Overlap Resolution
+
+When `resolve_msa_overlaps=True` (default):
+- Unpaired MSA sequences are deduplicated against paired MSA
+- Reduces redundancy and computational cost
+- Matches published AlphaFold 3 methodology
+
+When `resolve_msa_overlaps=False`:
+- All MSA sequences are kept exactly as provided
+- Use when providing custom paired alignments
+- Required when manual MSA pairing must be preserved
+
+## Related Modules
+
+- [MSA Processing](/api/data/msa) - Multiple sequence alignment handling
+- [Template Processing](/api/data/templates) - Structural template features

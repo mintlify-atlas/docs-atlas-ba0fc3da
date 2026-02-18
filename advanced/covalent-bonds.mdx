@@ -1,0 +1,454 @@
+---
+title: Specifying Covalent Bonds
+description: Learn how to specify covalent bonds between entities in AlphaFold 3 for modeling covalent ligands and glycans
+---
+
+# Specifying Covalent Bonds
+
+AlphaFold 3 supports explicit specification of covalent bonds between atoms across different entities. This is essential for modeling covalent ligands, glycans, and other covalently-linked molecules.
+
+## Overview
+
+Covalent bonds are defined in the `bondedAtomPairs` field as pairs of atoms, where each atom is uniquely identified by:
+
+1. **Chain ID** (entity ID)
+2. **Residue ID** (1-based position within the chain)
+3. **Atom Name** (unique name within the residue)
+
+```json
+{
+  "bondedAtomPairs": [
+    [["A", 145, "SG"], ["L", 1, "C04"]]
+  ]
+}
+```
+
+<Info>
+All bonds specified in `bondedAtomPairs` are implicitly **covalent bonds**. Other bond types are not currently supported.
+</Info>
+
+## Bond Specification Format
+
+### Atom Identification
+
+Each atom is specified as a three-element tuple:
+
+```json
+["chain_id", residue_id, "atom_name"]
+```
+
+<Steps>
+
+<Step title="Chain ID (String)">
+The entity identifier from the `sequences` section:
+- Must be an uppercase letter
+- Example: `"A"`, `"B"`, `"L"`
+</Step>
+
+<Step title="Residue ID (Integer)">
+**1-based** position within the chain:
+- For proteins/RNA/DNA: position in the sequence (1 = first residue)
+- For single-component ligands: always `1`
+- For multi-component ligands: component position (1, 2, 3, ...)
+</Step>
+
+<Step title="Atom Name (String)">
+Unique atom identifier within the residue:
+- For proteins/RNA/DNA: standard PDB atom names (`"CA"`, `"N"`, `"SG"`)
+- For CCD ligands: atom names from the CCD definition
+- For custom CCD: atom names you defined in `_chem_comp_atom.atom_id`
+</Step>
+
+</Steps>
+
+### Bond Pair Format
+
+A bond is an array of two atoms:
+
+```json
+[
+  ["source_chain", source_residue, "source_atom"],
+  ["dest_chain", dest_residue, "dest_atom"]
+]
+```
+
+## Use Cases
+
+### Use Case 1: Covalent Ligands
+
+Binding a ligand to a protein residue:
+
+```json
+{
+  "name": "Covalent ligand example",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTLTGKTITLEVEPS..."
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["HEM"]
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 145, "SG"], ["L", 1, "FE"]]
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+<Info>
+This creates a bond between:
+- Chain A, residue 145 (cysteine), atom SG (sulfur)
+- Chain L, residue 1 (heme), atom FE (iron)
+</Info>
+
+### Use Case 2: Glycans
+
+Defining multi-component glycans with internal bonds:
+
+<Tabs>
+  <Tab title="Linear Glycan">
+  ```json
+  {
+    "sequences": [
+      {
+        "protein": {
+          "id": "A",
+          "sequence": "MQIFVKTNLTGK..."
+        }
+      },
+      {
+        "ligand": {
+          "id": "G",
+          "ccdCodes": ["NAG", "NAG", "BMA"],
+          "description": "N-glycan core"
+        }
+      }
+    ],
+    "bondedAtomPairs": [
+      [["A", 8, "ND2"], ["G", 1, "C1"]],
+      [["G", 1, "O4"], ["G", 2, "C1"]],
+      [["G", 2, "O4"], ["G", 3, "C1"]]
+    ]
+  }
+  ```
+
+  Bonds:
+  1. Protein Asn8 → First NAG
+  2. First NAG → Second NAG
+  3. Second NAG → BMA
+  </Tab>
+
+  <Tab title="Branched Glycan">
+  ```json
+  {
+    "sequences": [
+      {
+        "protein": {
+          "id": "A",
+          "sequence": "MQIFVKTNLTGK..."
+        }
+      },
+      {
+        "ligand": {
+          "id": "G",
+          "ccdCodes": ["NAG", "NAG", "BMA", "MAN", "MAN"],
+          "description": "Branched N-glycan"
+        }
+      }
+    ],
+    "bondedAtomPairs": [
+      [["A", 8, "ND2"], ["G", 1, "C1"]],
+      [["G", 1, "O4"], ["G", 2, "C1"]],
+      [["G", 2, "O4"], ["G", 3, "C1"]],
+      [["G", 3, "O3"], ["G", 4, "C1"]],
+      [["G", 3, "O6"], ["G", 5, "C1"]]
+    ]
+  }
+  ```
+
+  Structure:
+  ```
+   ⋮
+  ALA            MAN (4)
+   |              |
+  ASN ―― NAG ―― NAG ―― BMA ―― MAN (5)
+   |      (1)    (2)    (3)
+  ALA
+   ⋮
+  ```
+  </Tab>
+</Tabs>
+
+### Use Case 3: Disulfide Bonds
+
+Defining disulfide bridges between cysteines:
+
+```json
+{
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKCTLTGKCITILEVEPCS..."
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 7, "SG"], ["A", 12, "SG"]],
+    [["A", 23, "SG"], ["A", 42, "SG"]]
+  ]
+}
+```
+
+<Warning>
+AlphaFold 3 may automatically detect some standard disulfide bonds. Explicitly defining them ensures they are modeled correctly.
+</Warning>
+
+### Use Case 4: Cross-Chain Bonds
+
+Bonds between different chains:
+
+```json
+{
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKCTLTGK..."
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "RDWHALECIDEV..."
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 7, "SG"], ["B", 8, "SG"]]
+  ]
+}
+```
+
+## Restrictions
+
+### SMILES Ligands Cannot Be Bonded
+
+<Warning>
+Ligands defined using **SMILES strings** cannot participate in bonds because SMILES doesn't provide unique atom names.
+</Warning>
+
+<CodeGroup>
+
+```json Invalid (Will Fail)
+{
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKCTLTGK..."
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 7, "SG"], ["L", 1, "???"]]  // No atom names in SMILES!
+  ]
+}
+```
+
+```json Valid (Use User CCD)
+{
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKCTLTGK..."
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["MY-LIG"]
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 7, "SG"], ["L", 1, "C04"]]
+  ],
+  "userCCD": "data_MY-LIG\n..."
+}
+```
+
+</CodeGroup>
+
+### Polymer-Polymer Bonds Not Supported
+
+<Warning>
+Defining covalent bonds **between or within polymer entities** (protein-protein, RNA-RNA, etc.) is not currently supported, except for disulfide bridges.
+</Warning>
+
+## Finding Atom Names
+
+### For Standard Residues
+
+Use the [RCSB PDB Chemical Component Dictionary](https://www.wwpdb.org/data/ccd):
+
+<Steps>
+
+<Step title="Navigate to CCD">
+Visit https://www.rcsb.org/ligand/
+</Step>
+
+<Step title="Search for Component">
+Search for your component (e.g., "ATP", "NAG", "HEM")
+</Step>
+
+<Step title="View Atom Names">
+View the 2D or 3D structure with atom labels to find the exact atom names
+</Step>
+
+</Steps>
+
+### For Custom Ligands
+
+Atom names are defined in your user-provided CCD:
+
+```cif
+loop_
+_chem_comp_atom.comp_id
+_chem_comp_atom.atom_id
+_chem_comp_atom.type_symbol
+MY-LIG C01 C
+MY-LIG C02 C
+MY-LIG C03 C
+MY-LIG O04 O
+MY-LIG N05 N
+```
+
+Use the `atom_id` values in your bonds.
+
+## Complete Example: N-Glycosylated Protein
+
+```json
+{
+  "name": "N-glycosylated protein",
+  "modelSeeds": [42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MQIFVKTNLTGKTITLEVEPS",
+        "description": "Protein with asparagine at position 7"
+      }
+    },
+    {
+      "ligand": {
+        "id": "G1",
+        "ccdCodes": ["NAG", "NAG", "BMA", "MAN", "MAN"],
+        "description": "N-glycan on first site"
+      }
+    },
+    {
+      "ligand": {
+        "id": "G2",
+        "ccdCodes": ["NAG"],
+        "description": "Single NAG on second site"
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["HEM"],
+        "description": "Heme cofactor"
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    // First glycan tree
+    [["A", 7, "ND2"], ["G1", 1, "C1"]],
+    [["G1", 1, "O4"], ["G1", 2, "C1"]],
+    [["G1", 2, "O4"], ["G1", 3, "C1"]],
+    [["G1", 3, "O3"], ["G1", 4, "C1"]],
+    [["G1", 3, "O6"], ["G1", 5, "C1"]],
+    // Second glycan
+    [["A", 15, "ND2"], ["G2", 1, "C1"]],
+    // Covalent heme
+    [["A", 5, "SG"], ["L", 1, "FE"]]
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+## Validation
+
+<Warning>
+AlphaFold 3 validates bonds during input parsing:
+
+1. Chain IDs must exist in `sequences`
+2. Residue IDs must be within valid range (1 to chain length)
+3. No duplicate bonds allowed
+4. SMILES ligands cannot be in bonds
+5. All bonds are converted to tuples internally
+</Warning>
+
+Invalid bonds will cause the input to be rejected with a clear error message.
+
+## Visual Representation
+
+```json
+{
+  "bondedAtomPairs": [
+    [["A", 145, "SG"], ["L", 1, "C04"]],
+    [["I", 1, "O6"], ["I", 2, "C1"]]
+  ]
+}
+```
+
+Breakdown:
+
+1. **First bond**: Chain A, residue 145, atom SG ↔ Chain L, residue 1, atom C04
+   - Cross-chain bond (protein to ligand)
+   - Covalent ligand attachment
+
+2. **Second bond**: Chain I, residue 1, atom O6 ↔ Chain I, residue 2, atom C1
+   - Within-chain bond
+   - Connects two components of a multi-component ligand
+
+## Code Reference
+
+From `folding_input.py:958-959`:
+```python
+bonded_atom_pairs: Sequence[tuple[BondAtomId, BondAtomId]] | None = None
+# BondAtomId: TypeAlias = tuple[str, int, str]
+```
+
+From `folding_input.py:1189-1234`:
+```python
+if bonds := raw_json.get('bondedAtomPairs'):
+  bonded_atom_pairs = []
+  for bond in bonds:
+    if len(bond) != 2:
+      raise ValueError(f'Bond {bond} must have 2 atoms.')
+    bond_beg, bond_end = bond
+    if len(bond_beg) != 3 or not isinstance(bond_beg[0], str) ...
+      raise ValueError(
+        'Atom must have 3 components: '
+        '(chain_id: str, res_id: int, atom_name: str).'
+      )
+```

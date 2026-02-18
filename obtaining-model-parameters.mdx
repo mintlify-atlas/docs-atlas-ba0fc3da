@@ -1,0 +1,245 @@
+---
+title: Obtaining Model Parameters
+description: How to request access to AlphaFold 3 model parameters from Google DeepMind
+---
+
+# Obtaining Model Parameters
+
+To use AlphaFold 3 for structure prediction, you need to obtain the model parameters (weights) from Google DeepMind.
+
+<Warning>
+  **Important**: You may only use AlphaFold 3 model parameters if received directly from Google. Use is subject to the [AlphaFold 3 Model Parameters Terms of Use](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md).
+</Warning>
+
+## Request Access
+
+<Steps>
+  <Step title="Complete the access request form">
+    Visit the Google Form to request access to AlphaFold 3 model parameters:
+    
+    **[Request AlphaFold 3 Model Parameters](https://forms.gle/svvpY4u2jsHEwWYS6)**
+    
+    You will need to provide:
+    - Your name and institutional affiliation
+    - Email address
+    - Intended use case
+    - Agreement to the terms of use
+  </Step>
+  
+  <Step title="Wait for approval">
+    Access will be granted at Google DeepMind's sole discretion.
+    
+    <Info>
+      **Expected Response Time**: 2-3 business days
+    </Info>
+    
+    You will receive an email notification once your request has been processed.
+  </Step>
+  
+  <Step title="Download the model parameters">
+    Once access is granted, you will receive instructions for downloading the model parameters.
+    
+    Download them to a directory on your system (referred to as `<MODEL_PARAMETERS_DIR>` in the documentation).
+  </Step>
+  
+  <Step title="Store model parameters">
+    Store the model parameters in a location that is:
+    - **NOT** a subdirectory of the AlphaFold 3 repository
+    - Accessible to your Docker container
+    - Has sufficient disk space
+    
+    <Tip>
+      Choose a location like `$HOME/alphafold3_models` or `/data/alphafold3/models` that will be easy to mount in Docker.
+    </Tip>
+  </Step>
+</Steps>
+
+## Terms of Use
+
+<Warning>
+  Before requesting access, carefully review the [AlphaFold 3 Model Parameters Terms of Use](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md).
+</Warning>
+
+### Key Terms
+
+- **Non-Commercial Use**: The model parameters are subject to specific usage restrictions
+- **No Redistribution**: You may not share or redistribute the model parameters
+- **Direct from Google**: Parameters must be obtained directly from Google DeepMind
+- **Citation Required**: Any publication using the model parameters must cite the AlphaFold 3 paper
+- **No Clinical Use**: Not intended, validated, or approved for clinical applications
+
+### Prohibited Uses
+
+The model parameters have specific prohibited use cases. Review the [Prohibited Use Policy](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_PROHIBITED_USE_POLICY.md) for complete details.
+
+## Using Model Parameters
+
+Once you have the model parameters, you can use them with AlphaFold 3:
+
+### With Docker
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    --volume <DB_DIR>:/root/public_databases \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output
+```
+
+The `--model_dir` flag should point to the directory containing your model parameters (mounted at `/root/models` inside the container).
+
+### With Singularity
+
+```bash
+singularity exec \
+     --nv \
+     --bind $HOME/af_input:/root/af_input \
+     --bind $HOME/af_output:/root/af_output \
+     --bind <MODEL_PARAMETERS_DIR>:/root/models \
+     --bind <DB_DIR>:/root/public_databases \
+     alphafold3.sif \
+     python run_alphafold.py \
+     --json_path=/root/af_input/fold_input.json \
+     --model_dir=/root/models \
+     --db_dir=/root/public_databases \
+     --output_dir=/root/af_output
+```
+
+## Alternative: AlphaFold Server
+
+If you don't need the full flexibility of the local installation, you can use AlphaFold 3 through the web interface:
+
+<Card title="AlphaFold Server" icon="cloud" href="https://alphafoldserver.com">
+  Use AlphaFold 3 online for non-commercial research without requiring model parameters or local installation.
+  
+  **Available at**: [alphafoldserver.com](https://alphafoldserver.com)
+  
+  **Note**: The server has a more limited set of ligands and covalent modifications compared to the local installation.
+</Card>
+
+### When to Use AlphaFold Server
+
+<CardGroup cols={2}>
+  <Card title="Use the Server When:" icon="check">
+    - You need quick predictions for standard cases
+    - You don't have access to GPU infrastructure
+    - Your use case is covered by available ligands
+    - You prefer a web interface
+  </Card>
+  <Card title="Use Local Installation When:" icon="server">
+    - You need custom ligands or SMILES
+    - You require high throughput predictions
+    - You need full control over MSA and templates
+    - You want to run on your own infrastructure
+    - You need complex covalent modifications
+  </Card>
+</CardGroup>
+
+## Citation Requirements
+
+<Info>
+  Any publication that discloses findings arising from using the model parameters or outputs produced by them must cite the AlphaFold 3 paper.
+</Info>
+
+### BibTeX Citation
+
+```bibtex
+@article{Abramson2024,
+  author  = {Abramson, Josh and Adler, Jonas and Dunger, Jack and Evans, Richard and Green, Tim and Pritzel, Alexander and Ronneberger, Olaf and Willmore, Lindsay and Ballard, Andrew J. and Bambrick, Joshua and Bodenstein, Sebastian W. and Evans, David A. and Hung, Chia-Chun and O'Neill, Michael and Reiman, David and Tunyasuvunakool, Kathryn and Wu, Zachary and Žemgulytė, Akvilė and Arvaniti, Eirini and Beattie, Charles and Bertolli, Ottavia and Bridgland, Alex and Cherepanov, Alexey and Congreve, Miles and Cowen-Rivers, Alexander I. and Cowie, Andrew and Figurnov, Michael and Fuchs, Fabian B. and Gladman, Hannah and Jain, Rishub and Khan, Yousuf A. and Low, Caroline M. R. and Perlin, Kuba and Potapenko, Anna and Savy, Pascal and Singh, Sukhdeep and Stecula, Adrian and Thillaisundaram, Ashok and Tong, Catherine and Yakneen, Sergei and Zhong, Ellen D. and Zielinski, Michal and Žídek, Augustin and Bapst, Victor and Kohli, Pushmeet and Jaderberg, Max and Hassabis, Demis and Jumper, John M.},
+  journal = {Nature},
+  title   = {Accurate structure prediction of biomolecular interactions with AlphaFold 3},
+  year    = {2024},
+  volume  = {630},
+  number  = {8016},
+  pages   = {493--500},
+  doi     = {10.1038/s41586-024-07487-w}
+}
+```
+
+### Plain Text Citation
+
+> Abramson, J., Adler, J., Dunger, J. et al. Accurate structure prediction of biomolecular interactions with AlphaFold 3. Nature 630, 493–500 (2024). https://doi.org/10.1038/s41586-024-07487-w
+
+## Frequently Asked Questions
+
+<AccordionGroup>
+  <Accordion title="How long does it take to get access?">
+    Google DeepMind aims to respond to requests within 2-3 business days. However, processing times may vary depending on request volume.
+  </Accordion>
+  
+  <Accordion title="Can I share the model parameters with colleagues?">
+    No. The model parameters must be obtained directly from Google and may not be redistributed. Each user must request their own access.
+  </Accordion>
+  
+  <Accordion title="What if my access request is denied?">
+    Access is granted at Google DeepMind's sole discretion. If your request is denied, you can:
+    - Use the [AlphaFold Server](https://alphafoldserver.com) for non-commercial research
+    - Contact alphafold@google.com for questions about access
+  </Accordion>
+  
+  <Accordion title="Can I use AlphaFold 3 for commercial purposes?">
+    The model parameters are subject to specific terms of use. Review the [Terms of Use](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_TERMS_OF_USE.md) and [Prohibited Use Policy](https://github.com/google-deepmind/alphafold3/blob/main/WEIGHTS_PROHIBITED_USE_POLICY.md) for details on permitted uses.
+  </Accordion>
+  
+  <Accordion title="How large are the model parameters?">
+    The model parameters download size and disk space requirements will be specified when you receive access. Ensure you have sufficient storage before downloading.
+  </Accordion>
+  
+  <Accordion title="Do I need to request access again for updates?">
+    If new versions of the model parameters are released, check the instructions provided with your original access grant for information about obtaining updates.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+### Model Directory Not Found
+
+If you get an error about the model directory:
+
+```bash
+# Verify the directory exists and contains model files
+ls -la <MODEL_PARAMETERS_DIR>
+
+# Check Docker volume mount
+docker run -it \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    alphafold3 \
+    ls -la /root/models
+```
+
+### Permission Issues
+
+```bash
+# Ensure the model directory has appropriate permissions
+chmod 755 <MODEL_PARAMETERS_DIR>
+```
+
+## Next Steps
+
+Once you have obtained the model parameters:
+
+<CardGroup cols={2}>
+  <Card title="Complete Installation" icon="download" href="/installation">
+    Finish setting up AlphaFold 3 with databases and Docker
+  </Card>
+  <Card title="Run Your First Prediction" icon="rocket" href="/quickstart">
+    Start making structure predictions
+  </Card>
+</CardGroup>
+
+## Support
+
+For questions about model parameter access:
+
+- Email: [alphafold@google.com](mailto:alphafold@google.com)
+- GitHub Issues: [alphafold3/issues](https://github.com/google-deepmind/alphafold3/issues) (for technical issues after obtaining access)
+
+<Note>
+  Please do not create GitHub issues about access requests. Contact alphafold@google.com directly for questions about the access process.
+</Note>

@@ -1,0 +1,541 @@
+---
+title: "Residue Names"
+description: "Constants associated with residue names for proteins, RNA, and DNA"
+---
+
+## Overview
+
+The `residue_names` module provides comprehensive constants for working with amino acid and nucleic acid residues in AlphaFold 3. It includes mappings, conversion functions, and standard residue type definitions.
+
+**Module Path:** `alphafold3.constants.residue_names`
+
+---
+
+## Functions
+
+### letters_three_to_one
+
+```python
+@functools.lru_cache(maxsize=64)
+def letters_three_to_one(restype: str, *, default: str) -> str
+```
+
+Returns the single letter name if one exists, otherwise returns the default value. Results are cached for performance.
+
+<ParamField path="restype" type="str">
+  Three-letter residue code (e.g., 'ARG', 'MSE', 'ALA')
+</ParamField>
+
+<ParamField path="default" type="str" required>
+  Default value to return if the residue is not found in the mapping
+</ParamField>
+
+**Returns:** Single letter code (e.g., 'R', 'M', 'A') or the default value
+
+**Example:**
+
+```python
+from alphafold3.constants.residue_names import letters_three_to_one
+
+# Standard amino acids
+print(letters_three_to_one('ARG', default='X'))  # Returns: 'R'
+print(letters_three_to_one('MSE', default='X'))  # Returns: 'M'
+print(letters_three_to_one('ZZZ', default='X'))  # Returns: 'X'
+```
+
+---
+
+## Mappings
+
+### CCD_NAME_TO_ONE_LETTER
+
+```python
+CCD_NAME_TO_ONE_LETTER: Mapping[str, str]
+```
+
+Comprehensive mapping from three-letter CCD (Chemical Component Dictionary) codes to single-letter codes. Contains over 1,400 entries including:
+
+- Standard amino acids (e.g., `'ALA': 'A'`, `'ARG': 'R'`)
+- Modified amino acids (e.g., `'MSE': 'M'`, `'SEP': 'S'`)
+- Nucleic acids (e.g., `'A': 'A'`, `'DA': 'A'`)
+- Non-standard residues and modifications
+
+**Example:**
+
+```python
+from alphafold3.constants.residue_names import CCD_NAME_TO_ONE_LETTER
+
+print(CCD_NAME_TO_ONE_LETTER['ALA'])  # 'A'
+print(CCD_NAME_TO_ONE_LETTER['MSE'])  # 'M' (selenomethionine)
+print(CCD_NAME_TO_ONE_LETTER['PHE'])  # 'F'
+```
+
+### Protein Mappings
+
+<Accordion title="PROTEIN_COMMON_ONE_TO_THREE">
+  ```python
+  PROTEIN_COMMON_ONE_TO_THREE: Mapping[str, str]
+  ```
+  
+  Maps single-letter amino acid codes to three-letter codes for the 20 standard amino acids.
+  
+  **Example:**
+  ```python
+  PROTEIN_COMMON_ONE_TO_THREE = {
+      'A': 'ALA', 'R': 'ARG', 'N': 'ASN', 'D': 'ASP',
+      'C': 'CYS', 'Q': 'GLN', 'E': 'GLU', 'G': 'GLY',
+      'H': 'HIS', 'I': 'ILE', 'L': 'LEU', 'K': 'LYS',
+      'M': 'MET', 'F': 'PHE', 'P': 'PRO', 'S': 'SER',
+      'T': 'THR', 'W': 'TRP', 'Y': 'TYR', 'V': 'VAL',
+  }
+  ```
+</Accordion>
+
+<Accordion title="PROTEIN_COMMON_THREE_TO_ONE">
+  ```python
+  PROTEIN_COMMON_THREE_TO_ONE: Mapping[str, str]
+  ```
+  
+  Inverse mapping of `PROTEIN_COMMON_ONE_TO_THREE`.
+  
+  **Example:**
+  ```python
+  print(PROTEIN_COMMON_THREE_TO_ONE['ALA'])  # 'A'
+  print(PROTEIN_COMMON_THREE_TO_ONE['TRP'])  # 'W'
+  ```
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_ONE_LETTER_TO_INT">
+  ```python
+  PROTEIN_TYPES_ONE_LETTER_TO_INT: Mapping[str, int]
+  ```
+  
+  Maps single-letter amino acid codes to integers (0-19) in alphabetical order.
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT">
+  ```python
+  PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT: Mapping[str, int]
+  ```
+  
+  Maps single-letter amino acid codes to integers (0-20), including 'X' for unknown.
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN_AND_GAP_TO_INT">
+  ```python
+  PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN_AND_GAP_TO_INT: Mapping[str, int]
+  ```
+  
+  Maps single-letter amino acid codes to integers (0-21), including 'X' and '-' (gap).
+</Accordion>
+
+### Nucleic Acid Mappings
+
+<Accordion title="DNA_COMMON_ONE_TO_TWO">
+  ```python
+  DNA_COMMON_ONE_TO_TWO: Mapping[str, str] = {
+      'A': 'DA',
+      'G': 'DG',
+      'C': 'DC',
+      'T': 'DT',
+  }
+  ```
+  
+  Maps single-letter DNA codes to two-letter codes.
+</Accordion>
+
+<Accordion title="RNA_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT">
+  ```python
+  RNA_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT: Mapping[str, int]
+  ```
+  
+  Maps RNA single-letter codes (A, G, C, U, N) to integers (0-4).
+</Accordion>
+
+<Accordion title="DNA_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT">
+  ```python
+  DNA_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT: Mapping[str, int]
+  ```
+  
+  Maps DNA single-letter codes (A, G, C, T, N) to integers (0-4).
+</Accordion>
+
+### Polymer Type Mappings
+
+<Accordion title="POLYMER_TYPES_ORDER">
+  ```python
+  POLYMER_TYPES_ORDER: Mapping[str, int]
+  ```
+  
+  Maps polymer residue types to their order indices (29 total: 20 amino acids + 1 unknown + 8 nucleotides).
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_ORDER_WITH_UNKNOWN">
+  ```python
+  POLYMER_TYPES_ORDER_WITH_UNKNOWN: Mapping[str, int]
+  ```
+  
+  Maps polymer residue types to their order indices including unknown (30 total).
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_ORDER_WITH_UNKNOWN_AND_GAP">
+  ```python
+  POLYMER_TYPES_ORDER_WITH_UNKNOWN_AND_GAP: Mapping[str, int]
+  ```
+  
+  Maps polymer residue types to their order indices including unknown and gap (31 total).
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_ORDER_WITH_ALL_UNKS_AND_GAP">
+  ```python
+  POLYMER_TYPES_ORDER_WITH_ALL_UNKS_AND_GAP: Mapping[str, int]
+  ```
+  
+  Maps polymer residue types to their order indices including all unknown types and gap (32 total).
+</Accordion>
+
+---
+
+## Protein Constants
+
+### Standard Amino Acids (Interned Strings)
+
+```python
+ALA = sys.intern('ALA')  # Alanine
+ARG = sys.intern('ARG')  # Arginine
+ASN = sys.intern('ASN')  # Asparagine
+ASP = sys.intern('ASP')  # Aspartic acid
+CYS = sys.intern('CYS')  # Cysteine
+GLN = sys.intern('GLN')  # Glutamine
+GLU = sys.intern('GLU')  # Glutamic acid
+GLY = sys.intern('GLY')  # Glycine
+HIS = sys.intern('HIS')  # Histidine
+ILE = sys.intern('ILE')  # Isoleucine
+LEU = sys.intern('LEU')  # Leucine
+LYS = sys.intern('LYS')  # Lysine
+MET = sys.intern('MET')  # Methionine
+PHE = sys.intern('PHE')  # Phenylalanine
+PRO = sys.intern('PRO')  # Proline
+SER = sys.intern('SER')  # Serine
+THR = sys.intern('THR')  # Threonine
+TRP = sys.intern('TRP')  # Tryptophan
+TYR = sys.intern('TYR')  # Tyrosine
+VAL = sys.intern('VAL')  # Valine
+```
+
+### Special Amino Acids
+
+```python
+UNK = sys.intern('UNK')  # Unknown amino acid
+GAP = sys.intern('-')    # Gap character
+UNL = sys.intern('UNL')  # Unknown ligand
+MSE = sys.intern('MSE')  # Selenomethionine (non-standard but common in PDB)
+```
+
+### Protein Type Tuples
+
+<Accordion title="PROTEIN_TYPES">
+  ```python
+  PROTEIN_TYPES: tuple[str, ...] = (
+      ALA, ARG, ASN, ASP, CYS, GLN, GLU, GLY, HIS, ILE, 
+      LEU, LYS, MET, PHE, PRO, SER, THR, TRP, TYR, VAL,
+  )
+  ```
+  
+  The 20 standard protein amino acids (no unknown).
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_WITH_UNKNOWN">
+  ```python
+  PROTEIN_TYPES_WITH_UNKNOWN: tuple[str, ...] = PROTEIN_TYPES + (UNK,)
+  ```
+  
+  The 20 standard protein amino acids plus UNK (21 total).
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_ONE_LETTER">
+  ```python
+  PROTEIN_TYPES_ONE_LETTER: tuple[str, ...] = (
+      'A', 'R', 'N', 'D', 'C', 'Q', 'E', 'G', 'H', 'I',
+      'L', 'K', 'M', 'F', 'P', 'S', 'T', 'W', 'Y', 'V',
+  )
+  ```
+  
+  Single-letter codes in alphabetical order (standard residue ordering).
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN">
+  ```python
+  PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN: tuple[str, ...] = 
+      PROTEIN_TYPES_ONE_LETTER + ('X',)
+  ```
+  
+  Single-letter codes including 'X' for unknown.
+</Accordion>
+
+<Accordion title="PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN_AND_GAP">
+  ```python
+  PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN_AND_GAP: tuple[str, ...] = 
+      PROTEIN_TYPES_ONE_LETTER_WITH_UNKNOWN + (GAP,)
+  ```
+  
+  Single-letter codes including 'X' and gap '-'.
+</Accordion>
+
+---
+
+## Nucleic Acid Constants
+
+### RNA Bases
+
+```python
+A = sys.intern('A')  # Adenine
+G = sys.intern('G')  # Guanine
+C = sys.intern('C')  # Cytosine
+U = sys.intern('U')  # Uracil
+```
+
+### DNA Bases
+
+```python
+DA = sys.intern('DA')  # Deoxyadenosine
+DG = sys.intern('DG')  # Deoxyguanosine
+DC = sys.intern('DC')  # Deoxycytidine
+DT = sys.intern('DT')  # Deoxythymidine
+T = sys.intern('T')    # Thymine (single letter)
+```
+
+### Unknown Nucleic Acids
+
+```python
+UNK_NUCLEIC_ONE_LETTER = sys.intern('N')   # Unknown nucleic acid
+UNK_RNA = sys.intern('N')                  # Unknown RNA
+UNK_DNA = sys.intern('DN')                 # Unknown DNA
+```
+
+### Nucleic Acid Type Tuples
+
+<Accordion title="RNA_TYPES">
+  ```python
+  RNA_TYPES: tuple[str, ...] = (A, G, C, U)
+  ```
+  
+  The 4 standard RNA bases.
+</Accordion>
+
+<Accordion title="DNA_TYPES">
+  ```python
+  DNA_TYPES: tuple[str, ...] = (DA, DG, DC, DT)
+  ```
+  
+  The 4 standard DNA bases (two-letter codes).
+</Accordion>
+
+<Accordion title="DNA_TYPES_ONE_LETTER">
+  ```python
+  DNA_TYPES_ONE_LETTER: tuple[str, ...] = (A, G, C, T)
+  ```
+  
+  The 4 standard DNA bases (single-letter codes).
+</Accordion>
+
+<Accordion title="NUCLEIC_TYPES">
+  ```python
+  NUCLEIC_TYPES: tuple[str, ...] = RNA_TYPES + DNA_TYPES
+  ```
+  
+  All 8 standard nucleic acid types (4 RNA + 4 DNA).
+</Accordion>
+
+<Accordion title="NUCLEIC_TYPES_WITH_UNKNOWN">
+  ```python
+  NUCLEIC_TYPES_WITH_UNKNOWN: tuple[str, ...] = 
+      NUCLEIC_TYPES + (UNK_NUCLEIC_ONE_LETTER,)
+  ```
+  
+  All nucleic acid types plus one unknown type (9 total).
+</Accordion>
+
+<Accordion title="NUCLEIC_TYPES_WITH_2_UNKS">
+  ```python
+  NUCLEIC_TYPES_WITH_2_UNKS: tuple[str, ...] = 
+      NUCLEIC_TYPES + (UNK_RNA, UNK_DNA,)
+  ```
+  
+  All nucleic acid types plus separate unknowns for RNA and DNA (10 total).
+</Accordion>
+
+<Accordion title="RNA_TYPES_ONE_LETTER_WITH_UNKNOWN">
+  ```python
+  RNA_TYPES_ONE_LETTER_WITH_UNKNOWN: tuple[str, ...] = RNA_TYPES + (UNK_RNA,)
+  ```
+  
+  RNA bases plus unknown (5 total).
+</Accordion>
+
+<Accordion title="DNA_TYPES_WITH_UNKNOWN">
+  ```python
+  DNA_TYPES_WITH_UNKNOWN: tuple[str, ...] = DNA_TYPES + (UNK_DNA,)
+  ```
+  
+  DNA bases (two-letter) plus unknown (5 total).
+</Accordion>
+
+<Accordion title="DNA_TYPES_ONE_LETTER_WITH_UNKNOWN">
+  ```python
+  DNA_TYPES_ONE_LETTER_WITH_UNKNOWN: tuple[str, ...] = 
+      DNA_TYPES_ONE_LETTER + (UNK_NUCLEIC_ONE_LETTER,)
+  ```
+  
+  DNA bases (single-letter) plus unknown (5 total).
+</Accordion>
+
+---
+
+## Polymer Type Constants
+
+### Polymer Type Tuples
+
+<Accordion title="STANDARD_POLYMER_TYPES">
+  ```python
+  STANDARD_POLYMER_TYPES: tuple[str, ...] = PROTEIN_TYPES + NUCLEIC_TYPES
+  ```
+  
+  All standard polymer types: 20 amino acids + 8 nucleotides = 28 total.
+</Accordion>
+
+<Accordion title="POLYMER_TYPES">
+  ```python
+  POLYMER_TYPES: tuple[str, ...] = 
+      PROTEIN_TYPES_WITH_UNKNOWN + NUCLEIC_TYPES
+  ```
+  
+  Polymer types including protein unknown: 21 amino acids + 8 nucleotides = 29 total.
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_WITH_UNKNOWN">
+  ```python
+  POLYMER_TYPES_WITH_UNKNOWN: tuple[str, ...] = 
+      PROTEIN_TYPES_WITH_UNKNOWN + NUCLEIC_TYPES_WITH_UNKNOWN
+  ```
+  
+  Polymer types with unknowns: 21 amino acids + 9 nucleotides = 30 total.
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_WITH_GAP">
+  ```python
+  POLYMER_TYPES_WITH_GAP: tuple[str, ...] = 
+      PROTEIN_TYPES + (GAP,) + NUCLEIC_TYPES
+  ```
+  
+  Polymer types with gap: 20 amino acids + 1 gap + 8 nucleotides = 29 total.
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_WITH_UNKNOWN_AND_GAP">
+  ```python
+  POLYMER_TYPES_WITH_UNKNOWN_AND_GAP: tuple[str, ...] = 
+      PROTEIN_TYPES_WITH_UNKNOWN + (GAP,) + NUCLEIC_TYPES_WITH_UNKNOWN
+  ```
+  
+  Polymer types with unknown and gap: 21 amino acids + 1 gap + 9 nucleotides = 31 total.
+</Accordion>
+
+<Accordion title="POLYMER_TYPES_WITH_ALL_UNKS_AND_GAP">
+  ```python
+  POLYMER_TYPES_WITH_ALL_UNKS_AND_GAP: tuple[str, ...] = 
+      PROTEIN_TYPES_WITH_UNKNOWN + (GAP,) + NUCLEIC_TYPES_WITH_2_UNKS
+  ```
+  
+  Polymer types with all unknowns and gap: 21 amino acids + 1 gap + 10 nucleotides = 32 total.
+</Accordion>
+
+### Polymer Type Counts
+
+```python
+POLYMER_TYPES_NUM = 29                              # len(POLYMER_TYPES)
+POLYMER_TYPES_NUM_WITH_UNKNOWN = 30                 # len(POLYMER_TYPES_WITH_UNKNOWN)
+POLYMER_TYPES_NUM_WITH_GAP = 29                     # len(POLYMER_TYPES_WITH_GAP)
+POLYMER_TYPES_NUM_WITH_UNKNOWN_AND_GAP = 31         # len(POLYMER_TYPES_WITH_UNKNOWN_AND_GAP)
+POLYMER_TYPES_NUM_ORDER_WITH_ALL_UNKS_AND_GAP = 32  # len(POLYMER_TYPES_WITH_ALL_UNKS_AND_GAP)
+```
+
+---
+
+## Other Constants
+
+### Water Types
+
+```python
+WATER_TYPES: tuple[str, ...] = ('HOH', 'DOD')
+```
+
+Standard water molecule types (H₂O and D₂O).
+
+### Unknown Types
+
+```python
+UNKNOWN_TYPES: tuple[str, ...] = (UNK, UNK_RNA, UNK_DNA, UNL)
+```
+
+All unknown residue types.
+
+---
+
+## Usage Examples
+
+### Converting Residue Names
+
+```python
+from alphafold3.constants import residue_names
+
+# Three-letter to one-letter
+one_letter = residue_names.letters_three_to_one('ARG', default='X')
+print(one_letter)  # 'R'
+
+# Using mapping directly
+from alphafold3.constants.residue_names import PROTEIN_COMMON_THREE_TO_ONE
+print(PROTEIN_COMMON_THREE_TO_ONE['PHE'])  # 'F'
+
+# One-letter to three-letter
+from alphafold3.constants.residue_names import PROTEIN_COMMON_ONE_TO_THREE
+print(PROTEIN_COMMON_ONE_TO_THREE['W'])  # 'TRP'
+```
+
+### Working with Polymer Types
+
+```python
+from alphafold3.constants.residue_names import (
+    POLYMER_TYPES_ORDER,
+    PROTEIN_TYPES,
+    RNA_TYPES,
+)
+
+# Check if a residue is a standard protein type
+if 'ALA' in PROTEIN_TYPES:
+    print("ALA is a standard amino acid")
+
+# Get the index of a polymer type
+index = POLYMER_TYPES_ORDER['ALA']
+print(f"ALA has index {index}")
+
+# Iterate over RNA types
+for rna_base in RNA_TYPES:
+    print(f"RNA base: {rna_base}")
+```
+
+### Integer Encoding
+
+```python
+from alphafold3.constants.residue_names import (
+    PROTEIN_TYPES_ONE_LETTER_TO_INT,
+    RNA_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT,
+)
+
+# Encode amino acid to integer
+aa_code = PROTEIN_TYPES_ONE_LETTER_TO_INT['A']  # 0
+print(f"Alanine code: {aa_code}")
+
+# Encode RNA base to integer
+rna_code = RNA_TYPES_ONE_LETTER_WITH_UNKNOWN_TO_INT['G']  # 1
+print(f"Guanine code: {rna_code}")
+```

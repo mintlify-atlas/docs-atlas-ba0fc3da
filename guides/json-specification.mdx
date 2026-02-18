@@ -1,0 +1,436 @@
+---
+title: 'JSON Specification'
+description: 'Detailed specification for AlphaFold 3 input entities with examples'
+icon: 'code'
+---
+
+## Entity Types
+
+AlphaFold 3 supports four primary entity types in the `sequences` array:
+
+<CardGroup cols={2}>
+  <Card title="Protein" icon="dna">
+    Amino acid sequences with modifications and templates
+  </Card>
+  <Card title="RNA" icon="circle-nodes">
+    RNA sequences with modifications and MSA
+  </Card>
+  <Card title="DNA" icon="circle-nodes">
+    DNA sequences with modifications
+  </Card>
+  <Card title="Ligand" icon="flask">
+    Small molecules via CCD codes or SMILES
+  </Card>
+</CardGroup>
+
+## Protein Entities
+
+Proteins are the most feature-rich entity type, supporting MSA, templates, and modifications.
+
+### Basic Structure
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "PVLSCGEWQL",
+    "modifications": [
+      {"ptmType": "HY3", "ptmPosition": 1},
+      {"ptmType": "P1L", "ptmPosition": 5}
+    ],
+    "description": "10-residue protein with 2 modifications",
+    "unpairedMsa": null,
+    "pairedMsa": null,
+    "templates": []
+  }
+}
+```
+
+### Field Specifications
+
+<ParamField path="id" type="string | array<string>" required>
+  Uppercase letter(s) for unique chain ID. Use array for homomers: `["A", "B", "C"]`
+</ParamField>
+
+<ParamField path="sequence" type="string" required>
+  Amino acid sequence using 1-letter standard codes
+</ParamField>
+
+<ParamField path="modifications" type="array">
+  Post-translational modifications. Each has `ptmType` (CCD code) and `ptmPosition` (1-based)
+</ParamField>
+
+<ParamField path="description" type="string">
+  Optional textual description (version 4+)
+</ParamField>
+
+<ParamField path="unpairedMsa" type="string">
+  A3M format MSA or empty string. Mutually exclusive with `unpairedMsaPath`
+</ParamField>
+
+<ParamField path="unpairedMsaPath" type="string">
+  Path to A3M MSA file (absolute or relative to JSON)
+</ParamField>
+
+<ParamField path="pairedMsa" type="string">
+  A3M format paired MSA. Recommended to use `unpairedMsa` instead
+</ParamField>
+
+<ParamField path="pairedMsaPath" type="string">
+  Path to paired MSA file
+</ParamField>
+
+<ParamField path="templates" type="array">
+  Structural templates in mmCIF format with alignment mappings
+</ParamField>
+
+### Homodimer Example
+
+```json
+{
+  "protein": {
+    "id": ["A", "B"],
+    "sequence": "MKLLVVSGGSGS",
+    "description": "Homodimer with two copies"
+  }
+}
+```
+
+### With Custom MSA
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "DEEP",
+    "unpairedMsa": ">query\nDEEP\n>match1\nD--P\n>match2\nDD-P",
+    "pairedMsa": "",
+    "templates": []
+  }
+}
+```
+
+## RNA Entities
+
+RNA sequences support modifications and MSA.
+
+```json
+{
+  "rna": {
+    "id": "E",
+    "sequence": "AGCU",
+    "modifications": [
+      {"modificationType": "2MG", "basePosition": 1},
+      {"modificationType": "5MC", "basePosition": 4}
+    ],
+    "description": "4-base RNA with modifications",
+    "unpairedMsa": null
+  }
+}
+```
+
+### Field Specifications
+
+<ParamField path="id" type="string | array<string>" required>
+  Uppercase letter(s) for chain ID
+</ParamField>
+
+<ParamField path="sequence" type="string" required>
+  RNA sequence using only `A`, `C`, `G`, `U`
+</ParamField>
+
+<ParamField path="modifications" type="array">
+  Each has `modificationType` (CCD code) and `basePosition` (1-based)
+</ParamField>
+
+<ParamField path="unpairedMsa" type="string">
+  A3M format MSA
+</ParamField>
+
+<ParamField path="unpairedMsaPath" type="string">
+  Path to MSA file
+</ParamField>
+
+## DNA Entities
+
+DNA sequences support modifications but not MSA or templates.
+
+```json
+{
+  "dna": {
+    "id": "C",
+    "sequence": "GACCTCT",
+    "modifications": [
+      {"modificationType": "6OG", "basePosition": 1},
+      {"modificationType": "6MA", "basePosition": 2}
+    ],
+    "description": "7-base DNA strand"
+  }
+}
+```
+
+### Field Specifications
+
+<ParamField path="id" type="string | array<string>" required>
+  Uppercase letter(s) for chain ID
+</ParamField>
+
+<ParamField path="sequence" type="string" required>
+  DNA sequence using only `A`, `C`, `G`, `T`
+</ParamField>
+
+<ParamField path="modifications" type="array">
+  Each has `modificationType` (CCD code) and `basePosition` (1-based)
+</ParamField>
+
+## Ligand Entities
+
+Ligands can be specified three ways:
+
+<Tabs>
+  <Tab title="CCD Codes">
+    ```json
+    {
+      "ligand": {
+        "id": ["F", "G", "H"],
+        "ccdCodes": ["ATP"],
+        "description": "Three ATP molecules"
+      }
+    }
+    ```
+    
+    Use standard [Chemical Component Dictionary](https://www.wwpdb.org/data/ccd) codes. Supports covalent bonds to other entities.
+  </Tab>
+  
+  <Tab title="SMILES">
+    ```json
+    {
+      "ligand": {
+        "id": "Z",
+        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+        "description": "Custom ligand via SMILES"
+      }
+    }
+    ```
+    
+    <Warning>
+    SMILES strings must be JSON-escaped (backslashes doubled). Cannot specify bonds to other entities.
+    </Warning>
+  </Tab>
+  
+  <Tab title="User CCD">
+    ```json
+    {
+      "ligand": {
+        "id": "J",
+        "ccdCodes": ["LIG-1337"],
+        "description": "Custom CCD-defined ligand"
+      }
+    }
+    ```
+    
+    Reference custom ligands defined in `userCCD` or `userCCDPath` at top level. Full control over atom names, bonds, and reference coordinates.
+  </Tab>
+</Tabs>
+
+### Field Specifications
+
+<ParamField path="id" type="string | array<string>" required>
+  Uppercase letter(s) for ligand ID
+</ParamField>
+
+<ParamField path="ccdCodes" type="array<string>">
+  List of CCD codes (standard or custom). Mutually exclusive with `smiles`
+</ParamField>
+
+<ParamField path="smiles" type="string">
+  SMILES definition. Mutually exclusive with `ccdCodes`
+</ParamField>
+
+### SMILES JSON Escaping
+
+<Note>
+Backslashes in SMILES must be escaped. Use `jq` or Python to properly escape:
+</Note>
+
+<CodeGroup>
+```bash jq
+jq -R . <<< 'CCC[C@@H](O)CC\C=C\C=C\C#CC#C\C=C\CO'
+```
+
+```python Python
+import json
+smiles = r'CCC[C@@H](O)CC\C=C\C=C\C#CC#C\C=C\CO'
+print(json.dumps(smiles))
+```
+</CodeGroup>
+
+### Ions as Ligands
+
+<Note>
+Ions are treated as ligands. For example, a magnesium ion:
+</Note>
+
+```json
+{
+  "ligand": {
+    "id": "MG1",
+    "ccdCodes": ["MG"]
+  }
+}
+```
+
+## Structural Templates
+
+Templates are only supported for proteins.
+
+```json
+"templates": [
+  {
+    "mmcif": "data_template\n_entry.id template\n...",
+    "queryIndices": [0, 1, 2, 4, 5, 6],
+    "templateIndices": [0, 1, 2, 3, 4, 8]
+  }
+]
+```
+
+<ParamField path="mmcif" type="string">
+  Single-chain protein template in mmCIF format. Mutually exclusive with `mmcifPath`
+</ParamField>
+
+<ParamField path="mmcifPath" type="string">
+  Path to mmCIF file (can be gzip, xz, or zstd compressed)
+</ParamField>
+
+<ParamField path="queryIndices" type="array<integer>" required>
+  0-based indices in query sequence
+</ParamField>
+
+<ParamField path="templateIndices" type="array<integer>" required>
+  0-based indices in template sequence (account for unresolved residues)
+</ParamField>
+
+<Warning>
+mmCIF files may have unresolved residues. These must be counted when specifying `templateIndices`.
+</Warning>
+
+## Covalent Bonds
+
+Define bonds between or within entities using `bondedAtomPairs`:
+
+```json
+"bondedAtomPairs": [
+  [["A", 145, "SG"], ["L", 1, "C04"]],
+  [["J", 1, "O6"], ["J", 2, "C1"]]
+]
+```
+
+Each bond is defined by two atoms: `[entityId, residueId, atomName]`
+
+- **Entity ID**: Chain ID from `id` field
+- **Residue ID**: 1-based position within chain
+- **Atom name**: From CCD definition
+
+### Glycan Example
+
+```json
+{
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "...ASN..."
+      }
+    },
+    {
+      "ligand": {
+        "id": "B",
+        "ccdCodes": ["CMP1", "CMP2", "CMP3", "CMP4"]
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 42, "ND2"], ["B", 1, "C1"]],
+    [["B", 1, "O4"], ["B", 2, "C1"]],
+    [["B", 2, "O3"], ["B", 3, "C1"]],
+    [["B", 2, "O6"], ["B", 4, "C1"]]
+  ]
+}
+```
+
+## Complete Example
+
+Here's a comprehensive input demonstrating multiple entity types:
+
+```json
+{
+  "name": "Complex Structure",
+  "modelSeeds": [10, 42],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "PVLSCGEWQL",
+        "modifications": [
+          {"ptmType": "HY3", "ptmPosition": 1},
+          {"ptmType": "P1L", "ptmPosition": 5}
+        ],
+        "description": "Protein with modifications"
+      }
+    },
+    {
+      "protein": {
+        "id": "B",
+        "sequence": "RPACQLW",
+        "templates": []
+      }
+    },
+    {
+      "dna": {
+        "id": "C",
+        "sequence": "GACCTCT",
+        "modifications": [
+          {"modificationType": "6OG", "basePosition": 1}
+        ]
+      }
+    },
+    {
+      "rna": {
+        "id": "E",
+        "sequence": "AGCU",
+        "modifications": [
+          {"modificationType": "2MG", "basePosition": 1}
+        ]
+      }
+    },
+    {
+      "ligand": {
+        "id": ["F", "G", "H"],
+        "ccdCodes": ["ATP"]
+      }
+    },
+    {
+      "ligand": {
+        "id": "Z",
+        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 1, "CA"], ["G", 1, "CHA"]]
+  ],
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Input Format" icon="file-code" href="/guides/input-format">
+    Top-level structure overview
+  </Card>
+  <Card title="Output Format" icon="folder-open" href="/guides/output-format">
+    Understanding prediction outputs
+  </Card>
+</CardGroup>

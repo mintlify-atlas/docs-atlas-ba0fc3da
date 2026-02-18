@@ -1,0 +1,528 @@
+---
+title: 'folding_input.py'
+description: 'Model input dataclasses for AlphaFold 3 structure prediction'
+---
+
+## Overview
+
+The `folding_input` module defines the data structures for AlphaFold 3 inputs, including protein chains, RNA chains, DNA chains, ligands, and templates. It handles JSON serialization/deserialization and mmCIF conversion.
+
+## Input Class
+
+Main dataclass representing an AlphaFold 3 prediction input.
+
+```python
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class Input:
+    name: str
+    chains: Sequence[ProteinChain | RnaChain | DnaChain | Ligand]
+    rng_seeds: Sequence[int]
+    bonded_atom_pairs: Sequence[tuple[BondAtomId, BondAtomId]] | None = None
+    user_ccd: str | None = None
+```
+
+<ParamField path="name" type="str" required>
+  The name of the target structure.
+</ParamField>
+
+<ParamField path="chains" type="Sequence[ProteinChain | RnaChain | DnaChain | Ligand]" required>
+  List of molecular chains (protein, RNA, DNA, or ligands).
+</ParamField>
+
+<ParamField path="rng_seeds" type="Sequence[int]" required>
+  Random number generator seeds, one for each model execution. Must have at least one seed.
+</ParamField>
+
+<ParamField path="bonded_atom_pairs" type="Sequence[tuple[BondAtomId, BondAtomId]] | None">
+  List of bonded atom pairs. Each atom defined by `(chain_id, res_id, atom_name)`. Residue IDs are 1-indexed.
+</ParamField>
+
+<ParamField path="user_ccd" type="str | None">
+  User-defined chemical component dictionary in CIF format for custom ligands.
+</ParamField>
+
+### Properties
+
+<ResponseField name="protein_chains" type="Sequence[ProteinChain]">
+  Filtered list of protein chains only.
+</ResponseField>
+
+<ResponseField name="rna_chains" type="Sequence[RnaChain]">
+  Filtered list of RNA chains only.
+</ResponseField>
+
+<ResponseField name="dna_chains" type="Sequence[DnaChain]">
+  Filtered list of DNA chains only.
+</ResponseField>
+
+<ResponseField name="ligands" type="Sequence[Ligand]">
+  Filtered list of ligands only.
+</ResponseField>
+
+### Class Methods
+
+#### from_json
+
+```python
+@classmethod
+def from_json(
+    cls, 
+    json_str: str, 
+    json_path: pathlib.Path | None = None
+) -> Self
+```
+
+Loads Input from AlphaFold JSON string. Supports both `alphafold3` and `alphafoldserver` dialects.
+
+<ParamField path="json_str" type="str" required>
+  JSON string in AlphaFold 3 format.
+</ParamField>
+
+<ParamField path="json_path" type="pathlib.Path | None">
+  Path to JSON file for resolving relative paths.
+</ParamField>
+
+#### from_mmcif
+
+```python
+@classmethod
+def from_mmcif(
+    cls, 
+    mmcif_str: str, 
+    ccd: chemical_components.Ccd
+) -> Self
+```
+
+Loads Input from mmCIF string. Note: RNG seeds are randomly sampled since mmCIFs don't store them.
+
+<ParamField path="mmcif_str" type="str" required>
+  mmCIF formatted structure string.
+</ParamField>
+
+<ParamField path="ccd" type="chemical_components.Ccd" required>
+  Chemical components dictionary.
+</ParamField>
+
+#### from_alphafoldserver_fold_job
+
+```python
+@classmethod
+def from_alphafoldserver_fold_job(
+    cls, 
+    fold_job: Mapping[str, Any]
+) -> Self
+```
+
+Constructs Input from AlphaFoldServer fold job format.
+
+### Instance Methods
+
+#### to_json
+
+```python
+def to_json(self) -> str
+```
+
+Converts Input to AlphaFold JSON string format with proper formatting.
+
+#### to_structure
+
+```python
+def to_structure(
+    self, 
+    ccd: chemical_components.Ccd
+) -> structure.Structure
+```
+
+Converts Input to a Structure object. Note: RNG seeds are not preserved.
+
+#### sanitised_name
+
+```python
+def sanitised_name(self) -> str
+```
+
+Returns sanitized name safe for use as filename (replaces spaces, removes special characters).
+
+#### fill_missing_fields
+
+```python
+def fill_missing_fields(self) -> Self
+```
+
+Fills missing MSA and template fields with default empty values.
+
+## ProteinChain Class
+
+Represents a protein chain input.
+
+```python
+class ProteinChain:
+    def __init__(
+        self,
+        *,
+        id: str,
+        sequence: str,
+        ptms: Sequence[tuple[str, int]],
+        description: str | None = None,
+        paired_msa: str | None = None,
+        unpaired_msa: str | None = None,
+        templates: Sequence[Template] | None = None,
+    )
+```
+
+<ParamField path="id" type="str" required>
+  Unique protein chain identifier (must be uppercase letter).
+</ParamField>
+
+<ParamField path="sequence" type="str" required>
+  Amino acid sequence (single-letter codes, only letters).
+</ParamField>
+
+<ParamField path="ptms" type="Sequence[tuple[str, int]]" required>
+  Post-translational modifications as list of `(modification_type, residue_index)`. Indices are 1-based.
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Optional textual description of the protein chain.
+</ParamField>
+
+<ParamField path="paired_msa" type="str | None">
+  Paired A3M-formatted MSA. If None, must be filled by data pipeline. Empty string means custom MSA with no sequences.
+</ParamField>
+
+<ParamField path="unpaired_msa" type="str | None">
+  Unpaired A3M-formatted MSA. If None, must be filled by data pipeline. Empty string means custom MSA with no sequences.
+</ParamField>
+
+<ParamField path="templates" type="Sequence[Template] | None">
+  List of structural templates (max 20). If None, must be filled by data pipeline. Empty list means no templates.
+</ParamField>
+
+### Properties
+
+<ResponseField name="sequence" type="str">
+  Single-letter sequence taking modifications into account (uses 'X' for unknown residues).
+</ResponseField>
+
+<ResponseField name="ptms" type="Sequence[tuple[str, int]]">
+  Post-translational modifications.
+</ResponseField>
+
+<ResponseField name="paired_msa" type="str | None">
+  Paired MSA in A3M format.
+</ResponseField>
+
+<ResponseField name="unpaired_msa" type="str | None">
+  Unpaired MSA in A3M format.
+</ResponseField>
+
+<ResponseField name="templates" type="Sequence[Template] | None">
+  Structural templates.
+</ResponseField>
+
+### Methods
+
+#### to_ccd_sequence
+
+```python
+def to_ccd_sequence(self) -> Sequence[str]
+```
+
+Converts to sequence of CCD (Chemical Component Dictionary) codes.
+
+#### to_dict
+
+```python
+def to_dict(
+    self, 
+    seq_id: str | Sequence[str] | None = None
+) -> Mapping[str, Mapping[str, Any]]
+```
+
+Converts ProteinChain to AlphaFold JSON dict.
+
+## RnaChain Class
+
+Represents an RNA chain input.
+
+```python
+class RnaChain:
+    def __init__(
+        self,
+        *,
+        id: str,
+        sequence: str,
+        modifications: Sequence[tuple[str, int]],
+        description: str | None = None,
+        unpaired_msa: str | None = None,
+    )
+```
+
+<ParamField path="id" type="str" required>
+  Unique RNA chain identifier (must be uppercase letter).
+</ParamField>
+
+<ParamField path="sequence" type="str" required>
+  RNA sequence (single-letter codes, only letters).
+</ParamField>
+
+<ParamField path="modifications" type="Sequence[tuple[str, int]]" required>
+  RNA modifications as list of `(modification_type, residue_index)`. Indices are 1-based.
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Optional textual description.
+</ParamField>
+
+<ParamField path="unpaired_msa" type="str | None">
+  Unpaired A3M-formatted MSA. If None, must be filled by data pipeline.
+</ParamField>
+
+### Properties
+
+<ResponseField name="sequence" type="str">
+  Single-letter sequence taking modifications into account (uses 'N' for unknown residues).
+</ResponseField>
+
+<ResponseField name="modifications" type="Sequence[tuple[str, int]]">
+  RNA modifications.
+</ResponseField>
+
+<ResponseField name="unpaired_msa" type="str | None">
+  Unpaired MSA in A3M format.
+</ResponseField>
+
+## DnaChain Class
+
+Represents a single-strand DNA chain input.
+
+```python
+class DnaChain:
+    def __init__(
+        self,
+        *,
+        id: str,
+        sequence: str,
+        modifications: Sequence[tuple[str, int]],
+        description: str | None = None,
+    )
+```
+
+<ParamField path="id" type="str" required>
+  Unique DNA chain identifier (must be uppercase letter).
+</ParamField>
+
+<ParamField path="sequence" type="str" required>
+  DNA sequence (single-letter codes, only letters).
+</ParamField>
+
+<ParamField path="modifications" type="Sequence[tuple[str, int]]" required>
+  DNA modifications as list of `(modification_type, residue_index)`. Indices are 1-based.
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Optional textual description.
+</ParamField>
+
+### Properties
+
+<ResponseField name="sequence" type="str">
+  Single-letter sequence taking modifications into account (uses 'N' for unknown residues).
+</ResponseField>
+
+## Ligand Class
+
+Represents a ligand (small molecule) input.
+
+```python
+@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
+class Ligand:
+    id: str
+    ccd_ids: Sequence[str] | None = None
+    smiles: str | None = None
+    description: str | None = None
+```
+
+<ParamField path="id" type="str" required>
+  Unique ligand "chain" identifier.
+</ParamField>
+
+<ParamField path="ccd_ids" type="Sequence[str] | None">
+  Chemical Component Dictionary IDs. Either `ccd_ids` or `smiles` must be set (not both).
+</ParamField>
+
+<ParamField path="smiles" type="str | None">
+  SMILES representation of ligand. Either `ccd_ids` or `smiles` must be set (not both).
+</ParamField>
+
+<ParamField path="description" type="str | None">
+  Optional textual description.
+</ParamField>
+
+## Template Class
+
+Represents a structural template for protein chains.
+
+```python
+class Template:
+    def __init__(
+        self, 
+        *, 
+        mmcif: str, 
+        query_to_template_map: Mapping[int, int]
+    )
+```
+
+<ParamField path="mmcif" type="str" required>
+  Structural template in mmCIF format (should have only one protein chain).
+</ParamField>
+
+<ParamField path="query_to_template_map" type="Mapping[int, int]" required>
+  Mapping from query residue index to template residue index.
+</ParamField>
+
+### Properties
+
+<ResponseField name="mmcif" type="str">
+  mmCIF string of the template structure.
+</ResponseField>
+
+<ResponseField name="query_to_template_map" type="Mapping[int, int]">
+  Query-to-template residue mapping.
+</ResponseField>
+
+## Usage Examples
+
+### Creating a Simple Protein Input
+
+```python
+from alphafold3.common import folding_input
+
+# Create protein chain
+protein = folding_input.ProteinChain(
+    id='A',
+    sequence='MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYAIEGIFHATIKHNIMYKYSSKT',
+    ptms=[],  # No post-translational modifications
+    description='Example protein'
+)
+
+# Create input
+fold_input = folding_input.Input(
+    name='my_protein',
+    chains=[protein],
+    rng_seeds=[42, 123, 456],  # Multiple seeds for sampling
+)
+```
+
+### Creating a Complex with Ligand
+
+```python
+# Protein chain
+protein = folding_input.ProteinChain(
+    id='A',
+    sequence='MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA',
+    ptms=[('SEP', 10)],  # Phosphoserine at position 10
+)
+
+# Ligand by CCD code
+ligand = folding_input.Ligand(
+    id='B',
+    ccd_ids=['ATP'],  # Adenosine triphosphate
+    description='ATP substrate'
+)
+
+# Create input with bonded atoms
+fold_input = folding_input.Input(
+    name='protein_ligand_complex',
+    chains=[protein, ligand],
+    rng_seeds=[42],
+    bonded_atom_pairs=[
+        (('A', 15, 'SG'), ('B', 1, 'PG')),  # Cysteine SG bonded to ATP
+    ]
+)
+```
+
+### Loading from JSON
+
+```python
+import pathlib
+
+# Load from file
+fold_input = folding_input.Input.from_json(
+    json_str=pathlib.Path('input.json').read_text(),
+    json_path=pathlib.Path('input.json')
+)
+
+# Access chains
+print(f"Protein chains: {len(fold_input.protein_chains)}")
+print(f"Ligands: {len(fold_input.ligands)}")
+```
+
+### Saving to JSON
+
+```python
+# Save input to JSON
+json_str = fold_input.to_json()
+with open('output.json', 'w') as f:
+    f.write(json_str)
+```
+
+## JSON Format
+
+### AlphaFold 3 JSON Dialect
+
+```json
+{
+  "dialect": "alphafold3",
+  "version": 4,
+  "name": "my_structure",
+  "modelSeeds": [42, 123],
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKFLKFSLLTAVLLSVVFAFSSCGDDDDTYPYDVPDYA",
+        "modifications": [
+          {"ptmType": "SEP", "ptmPosition": 10}
+        ],
+        "unpairedMsa": null,
+        "pairedMsa": null,
+        "templates": null
+      }
+    },
+    {
+      "ligand": {
+        "id": "B",
+        "ccdCodes": ["ATP"]
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 15, "SG"], ["B", 1, "PG"]]
+  ]
+}
+```
+
+## Constants
+
+```python
+JSON_DIALECT: Final[str] = 'alphafold3'
+JSON_VERSIONS: Final[tuple[int, ...]] = (1, 2, 3, 4)
+JSON_VERSION: Final[int] = 4
+
+ALPHAFOLDSERVER_JSON_DIALECT: Final[str] = 'alphafoldserver'
+ALPHAFOLDSERVER_JSON_VERSION: Final[int] = 1
+```
+
+## Type Aliases
+
+```python
+BondAtomId: TypeAlias = tuple[str, int, str]  # (chain_id, res_id, atom_name)
+```
+
+## See Also
+
+- [run_alphafold.py](/api/run-alphafold) - Main prediction script
+- [DataPipeline Class](/api/pipeline) - MSA and template processing
+- [Model Class](/api/model) - Core model architecture

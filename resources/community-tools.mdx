@@ -1,0 +1,204 @@
+---
+title: "Community Tools"
+description: "Third-party tools and resources for AlphaFold 3"
+---
+
+<Note>
+  These are community-developed tools that complement AlphaFold 3. They are not officially supported by Google DeepMind.
+</Note>
+
+## JAAG: JSON Assembler for AlphaFold 3 (with Glycan Integration)
+
+### Overview
+
+JAAG is a lightweight, web-based GUI tool that helps generate AlphaFold 3 input JSON files with integrated glycan support. It automates the creation of correct glycan syntax, reducing manual errors when preparing glycoprotein or glycan-protein complexes.
+
+### Key Features
+
+- **Web-based interface**: No installation required
+- **Glycan support**: Automated glycan syntax generation
+- **CCD integration**: Correct Chemical Component Dictionary codes
+- **Bonded atom pairs**: Automatic generation of `bondedAtomPairs` syntax
+- **Error reduction**: Validates input and prevents common mistakes
+- **User-friendly**: Intuitive GUI for non-programmers
+
+### Use Cases
+
+- Modeling glycoproteins
+- Creating glycan-protein complexes
+- Setting up covalent modifications
+- Learning AlphaFold 3 JSON format
+- Rapid prototyping of input files
+
+### Access and Resources
+
+- **Web app**: [https://biofgreat.org/JAAG](https://biofgreat.org/JAAG)
+- **Source code**: [https://github.com/chinchc/JAAG](https://github.com/chinchc/JAAG)
+- **Paper**: [https://doi.org/10.1093/glycob/cwaf083](https://doi.org/10.1093/glycob/cwaf083)
+
+### Compatibility
+
+<Warning>
+  JAAG is compatible with **standalone AlphaFold 3** installations only. It is **not** compatible with the AlphaFold 3 server at alphafoldserver.com.
+</Warning>
+
+### Getting Started with JAAG
+
+1. Visit the [JAAG web app](https://biofgreat.org/JAAG)
+2. Input your protein sequence
+3. Add glycan structures using the GUI
+4. Configure bonded atom pairs
+5. Export the generated JSON file
+6. Use the JSON file with your local AlphaFold 3 installation
+
+---
+
+## Modeling Glycans with AlphaFold 3: Capabilities, Caveats, and Limitations
+
+### Overview
+
+A comprehensive research paper and resource collection on modeling glycans (and other ligands) with AlphaFold 3. This work systematically modeled and assessed major glycan classes, providing practical guidance for users.
+
+### What's Included
+
+#### 1. Step-by-Step Tutorial
+
+- Building ligand inputs from scratch
+- Applicable beyond glycans to other small molecules
+- Best practices for input preparation
+- Common pitfalls and how to avoid them
+
+#### 2. Ready-to-Run Scripts
+
+- Scripts for each major glycan class:
+  - N-glycans
+  - O-glycans
+  - Glycosaminoglycans
+  - Other glycan types
+- Copy-paste examples for quick start
+- Customizable templates
+
+#### 3. Comprehensive CCD Table
+
+- Complete table of CCD codes for all SNFG monosaccharides
+- Standard naming conventions
+- Chemical structures and properties
+- Bonding patterns
+
+#### 4. Analysis and Discussion
+
+- Caveats and limitations of AlphaFold 3 for glycan modeling
+- Accuracy assessment across glycan classes
+- When AlphaFold 3 works well vs. when it struggles
+- Validation strategies
+
+#### 5. Reproducible Data
+
+- Full AlphaFold 3 inputs archived on ModelArchive
+- Complete outputs for all modeled structures
+- Enables reproduction and comparison
+
+### When to Use This Resource
+
+<Info>
+  This resource is especially useful if your AlphaFold 3 ligand models appear **stereochemically incorrect**.
+</Info>
+
+- Glycan models look distorted
+- Unexpected bond angles or lengths
+- Clashes in glycan structures
+- Learning how to model complex carbohydrates
+- Understanding AlphaFold 3's capabilities and limitations
+
+### Access and Resources
+
+- **Paper**: [https://doi.org/10.1093/glycob/cwaf048](https://doi.org/10.1093/glycob/cwaf048)
+- **ModelArchive**: [https://doi.org/10.5452/ma-af3glycan](https://doi.org/10.5452/ma-af3glycan)
+
+### Key Takeaways from the Paper
+
+1. **AlphaFold 3 can model many glycan types** with good accuracy
+2. **Careful input preparation is critical** for success
+3. **Validation is essential** - don't trust predictions blindly
+4. **Some glycan classes are more challenging** than others
+5. **Stereochemistry must be checked** carefully in outputs
+
+### Example Applications
+
+- **Glycoproteins**: Modeling antibodies with N-glycosylation
+- **Lectins**: Predicting lectin-glycan interactions
+- **Glycan arrays**: Screening multiple glycan structures
+- **Drug discovery**: Modeling glycan-binding proteins with inhibitors
+
+---
+
+## Contributing Community Tools
+
+<Note>
+  Have you developed a tool for AlphaFold 3? Share it with the community!
+</Note>
+
+### How to Share Your Tool
+
+1. **Publish on GitHub**: Make your code openly available
+2. **Write documentation**: Clear usage instructions
+3. **Contact the team**: Email [alphafold@google.com](mailto:alphafold@google.com)
+4. **Share in the community**: Post on relevant forums and social media
+
+### Tool Development Guidelines
+
+- **Open source**: Use permissive licenses (MIT, Apache, etc.)
+- **Well documented**: README, examples, tutorials
+- **Tested**: Include test cases and validation
+- **Compatible**: Clearly state AlphaFold 3 version compatibility
+- **Non-commercial**: Respect AlphaFold 3's non-commercial license
+
+### Useful Tool Categories
+
+- **Input generation**: Tools to create JSON files
+- **Visualization**: Structure viewers and analysis tools
+- **Validation**: Tools to assess prediction quality
+- **Post-processing**: Analysis of outputs
+- **Integration**: Connecting AlphaFold 3 with other software
+- **Automation**: Batch processing and workflows
+
+---
+
+## Additional Resources
+
+### Official Resources
+
+- **GitHub Repository**: [https://github.com/google-deepmind/alphafold3](https://github.com/google-deepmind/alphafold3)
+- **AlphaFold Server**: [https://alphafoldserver.com](https://alphafoldserver.com)
+- **Documentation**: [Official documentation](/introduction)
+- **Issues Tracker**: [GitHub Issues](https://github.com/google-deepmind/alphafold3/issues)
+
+### Related Tools
+
+- **PyMOL**: Visualization of predicted structures
+- **ChimeraX**: Advanced structure analysis and visualization
+- **RDKit**: Small molecule handling and validation
+- **BioPython**: Sequence manipulation and analysis
+
+### Databases
+
+- **PDB**: Protein Data Bank for template structures
+- **CCD**: Chemical Component Dictionary for ligand codes
+- **UniProt**: Protein sequences and annotations
+- **SNFG**: Symbol Nomenclature for Glycans
+
+---
+
+## Disclaimer
+
+<Warning>
+  Community tools are developed and maintained independently. Google DeepMind does not endorse or provide support for third-party tools.
+</Warning>
+
+When using community tools:
+
+- Verify compatibility with your AlphaFold 3 version
+- Test thoroughly before production use
+- Report issues to the tool developers
+- Cite both AlphaFold 3 and the community tool in publications
+- Review the tool's license and terms of use

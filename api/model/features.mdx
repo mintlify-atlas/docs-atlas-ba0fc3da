@@ -1,0 +1,493 @@
+---
+title: "Features"
+description: "Data-side input feature processing for AlphaFold 3 model inputs."
+---
+
+## Overview
+
+The features module handles the data-side processing of input features for AlphaFold 3. It provides dataclasses and functions for converting raw input data into model-ready tensors, including MSA processing, template features, token features, and atom layout management.
+
+## Core Types
+
+### BatchDict
+
+Type alias for feature dictionaries passed to the model.
+
+```python
+BatchDict: TypeAlias = dict[str, xnp_ndarray]
+```
+
+Where `xnp_ndarray` is a union type for NumPy or JAX arrays.
+
+### PaddingShapes
+
+Defines padding dimensions for batched model inputs.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class PaddingShapes:
+    num_tokens: int
+    msa_size: int
+    num_chains: int
+    num_templates: int
+    num_atoms: int
+```
+
+<ParamField path="num_tokens" type="int" required>
+  Maximum number of tokens (residues + ligand atoms) in the sequence.
+</ParamField>
+
+<ParamField path="msa_size" type="int" required>
+  Maximum number of MSA rows to include.
+</ParamField>
+
+<ParamField path="num_chains" type="int" required>
+  Maximum number of chains in the complex.
+</ParamField>
+
+<ParamField path="num_templates" type="int" required>
+  Maximum number of structural templates.
+</ParamField>
+
+<ParamField path="num_atoms" type="int" required>
+  Maximum number of atoms per token.
+</ParamField>
+
+## MSA Features
+
+### MSA Dataclass
+
+Contains multiple sequence alignment features.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class MSA:
+    rows: xnp_ndarray
+    mask: xnp_ndarray
+    deletion_matrix: xnp_ndarray
+    profile: xnp_ndarray
+    deletion_mean: xnp_ndarray
+    num_alignments: xnp_ndarray
+```
+
+<ResponseField name="rows" type="xnp_ndarray">
+  MSA sequences encoded as integers. Shape: `(msa_size, num_tokens)`
+</ResponseField>
+
+<ResponseField name="mask" type="xnp_ndarray">
+  Binary mask for valid MSA positions. Shape: `(msa_size, num_tokens)`
+</ResponseField>
+
+<ResponseField name="deletion_matrix" type="xnp_ndarray">
+  Number of deletions at each MSA position. Shape: `(msa_size, num_tokens)`
+</ResponseField>
+
+<ResponseField name="profile" type="xnp_ndarray">
+  Occurrence of each residue type along the sequence, averaged over MSA rows. Shape: `(num_tokens, num_residue_types)`
+</ResponseField>
+
+<ResponseField name="deletion_mean" type="xnp_ndarray">
+  Occurrence of deletions along the sequence, averaged over MSA rows. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="num_alignments" type="xnp_ndarray">
+  Total number of MSA alignments (scalar).
+</ResponseField>
+
+### compute_features
+
+Computes MSA features from folding input.
+
+```python
+@classmethod
+def compute_features(
+    cls,
+    *,
+    all_tokens: atom_layout.AtomLayout,
+    standard_token_idxs: np.ndarray,
+    padding_shapes: PaddingShapes,
+    fold_input: folding_input.Input,
+    logging_name: str,
+    max_paired_sequence_per_species: int,
+    resolve_msa_overlaps: bool = True,
+) -> Self:
+    """Compute the MSA features."""
+```
+
+<ParamField path="all_tokens" type="atom_layout.AtomLayout" required>
+  Atom layout containing one representative atom per token.
+</ParamField>
+
+<ParamField path="standard_token_idxs" type="np.ndarray" required>
+  Token indices for non-flattened standard residues.
+</ParamField>
+
+<ParamField path="padding_shapes" type="PaddingShapes" required>
+  Padding dimensions for the output tensors.
+</ParamField>
+
+<ParamField path="fold_input" type="folding_input.Input" required>
+  Input data containing MSAs for each chain.
+</ParamField>
+
+<ParamField path="logging_name" type="str" required>
+  Name for logging (typically mmCIF ID).
+</ParamField>
+
+<ParamField path="max_paired_sequence_per_species" type="int" required>
+  Maximum number of paired sequences per species.
+</ParamField>
+
+<ParamField path="resolve_msa_overlaps" type="bool" default={true}>
+  Whether to deduplicate overlapping sequences in paired MSA.
+</ParamField>
+
+### Methods
+
+#### index_msa_rows
+
+Subsample MSA rows by indices.
+
+```python
+def index_msa_rows(self, indices: xnp_ndarray) -> Self:
+    """Returns new MSA with selected rows."""
+```
+
+#### from_data_dict
+
+Create MSA from batch dictionary.
+
+```python
+@classmethod
+def from_data_dict(cls, batch: BatchDict) -> Self:
+    """Reconstruct MSA from feature dictionary."""
+```
+
+#### as_data_dict
+
+Convert MSA to batch dictionary.
+
+```python
+def as_data_dict(self) -> BatchDict:
+    """Convert to dictionary of arrays for model input."""
+```
+
+## Template Features
+
+### Templates Dataclass
+
+Contains structural template features.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class Templates:
+    aatype: xnp_ndarray  # Shape: (num_templates, num_tokens)
+    atom_positions: xnp_ndarray  # Shape: (num_templates, num_tokens, 24, 3)
+    atom_mask: xnp_ndarray  # Shape: (num_templates, num_tokens, 24)
+```
+
+<ResponseField name="aatype" type="xnp_ndarray">
+  Amino acid type encoded as integers. Shape: `(num_templates, num_tokens)`
+</ResponseField>
+
+<ResponseField name="atom_positions" type="xnp_ndarray">
+  3D coordinates of template atoms. Shape: `(num_templates, num_tokens, 24, 3)`
+</ResponseField>
+
+<ResponseField name="atom_mask" type="xnp_ndarray">
+  Binary mask for valid template atoms. Shape: `(num_templates, num_tokens, 24)`
+</ResponseField>
+
+### compute_features
+
+Computes template features from protein chain templates.
+
+```python
+@classmethod
+def compute_features(
+    cls,
+    all_tokens: atom_layout.AtomLayout,
+    standard_token_idxs: np.ndarray,
+    padding_shapes: PaddingShapes,
+    fold_input: folding_input.Input,
+    max_templates: int,
+    logging_name: str,
+) -> Self:
+    """Compute template features."""
+```
+
+<ParamField path="all_tokens" type="atom_layout.AtomLayout" required>
+  Atom layout with representative atom per token.
+</ParamField>
+
+<ParamField path="standard_token_idxs" type="np.ndarray" required>
+  Indices for standard (non-flattened) tokens.
+</ParamField>
+
+<ParamField path="padding_shapes" type="PaddingShapes" required>
+  Padding dimensions.
+</ParamField>
+
+<ParamField path="fold_input" type="folding_input.Input" required>
+  Input containing template structures.
+</ParamField>
+
+<ParamField path="max_templates" type="int" required>
+  Maximum number of templates to use.
+</ParamField>
+
+<ParamField path="logging_name" type="str" required>
+  Name for logging.
+</ParamField>
+
+## Token Features
+
+### TokenFeatures Dataclass
+
+Per-token features including chain identifiers and token types.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class TokenFeatures:
+    residue_index: xnp_ndarray
+    token_index: xnp_ndarray
+    aatype: xnp_ndarray
+    mask: xnp_ndarray
+    seq_length: xnp_ndarray
+    
+    # Chain symmetry identifiers
+    asym_id: xnp_ndarray
+    entity_id: xnp_ndarray
+    sym_id: xnp_ndarray
+    
+    # Token type features
+    is_protein: xnp_ndarray
+    is_rna: xnp_ndarray
+    is_dna: xnp_ndarray
+    is_ligand: xnp_ndarray
+    is_nonstandard_polymer_chain: xnp_ndarray
+    is_water: xnp_ndarray
+```
+
+<ResponseField name="residue_index" type="xnp_ndarray">
+  Residue index from input structure. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="token_index" type="xnp_ndarray">
+  Sequential token index (1-indexed). Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="aatype" type="xnp_ndarray">
+  Encoded residue/ligand type. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="mask" type="xnp_ndarray">
+  Binary mask for valid tokens. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="seq_length" type="xnp_ndarray">
+  Total sequence length (scalar).
+</ResponseField>
+
+<ResponseField name="asym_id" type="xnp_ndarray">
+  Asymmetric unit ID for each chain. For A3B2 stoichiometry: 1, 2, 3, 4, 5. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="entity_id" type="xnp_ndarray">
+  Entity ID grouping identical sequences. For A3B2: 1, 1, 1, 2, 2. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="sym_id" type="xnp_ndarray">
+  Symmetry ID within entity. For A3B2: 1, 2, 3, 1, 2. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="is_protein" type="xnp_ndarray">
+  Boolean mask for protein tokens. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="is_rna" type="xnp_ndarray">
+  Boolean mask for RNA tokens. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="is_dna" type="xnp_ndarray">
+  Boolean mask for DNA tokens. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="is_ligand" type="xnp_ndarray">
+  Boolean mask for ligand tokens. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="is_nonstandard_polymer_chain" type="xnp_ndarray">
+  Boolean mask for non-standard polymer chains. Shape: `(num_tokens,)`
+</ResponseField>
+
+<ResponseField name="is_water" type="xnp_ndarray">
+  Boolean mask for water molecules. Shape: `(num_tokens,)`
+</ResponseField>
+
+## Tokenization
+
+### tokenizer
+
+Maps flat atom layout to tokens for the Evoformer.
+
+```python
+def tokenizer(
+    flat_output_layout: atom_layout.AtomLayout,
+    ccd: chemical_components.Ccd,
+    max_atoms_per_token: int,
+    flatten_non_standard_residues: bool,
+    logging_name: str,
+) -> tuple[atom_layout.AtomLayout, atom_layout.AtomLayout, np.ndarray]:
+    """Maps flat atom layout to tokens for evoformer.
+    
+    Creates one token per polymer residue and one token per ligand atom.
+    
+    Returns:
+        all_tokens: AtomLayout with 1 representative atom per token
+        all_token_atoms_layout: AtomLayout with all atoms per token
+        standard_token_idxs: Token indices if not flattening non-standard residues
+    """
+```
+
+<ParamField path="flat_output_layout" type="atom_layout.AtomLayout" required>
+  Flat atom layout containing all atoms to predict.
+</ParamField>
+
+<ParamField path="ccd" type="chemical_components.Ccd" required>
+  Chemical components dictionary.
+</ParamField>
+
+<ParamField path="max_atoms_per_token" type="int" required>
+  Number of atom slots per token.
+</ParamField>
+
+<ParamField path="flatten_non_standard_residues" type="bool" required>
+  Whether to use one token per atom for non-standard residues.
+</ParamField>
+
+<ParamField path="logging_name" type="str" required>
+  Name for logging (typically mmCIF ID).
+</ParamField>
+
+**Tokenization Rules:**
+- **Standard protein residues**: 1 token per residue (CA representative atom)
+- **Standard nucleic residues**: 1 token per residue (C1' representative atom)
+- **Non-standard polymer residues**: 1 token per atom if `flatten_non_standard_residues=True`
+- **Ligands**: 1 token per atom
+
+## Additional Feature Classes
+
+### PredictedStructureInfo
+
+Information for working with predicted structures.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class PredictedStructureInfo:
+    atom_mask: xnp_ndarray
+    residue_center_index: xnp_ndarray
+```
+
+### PolymerLigandBondInfo
+
+Information about polymer-ligand bonds.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class PolymerLigandBondInfo:
+    tokens_to_polymer_ligand_bonds: atom_layout.GatherInfo
+    token_atoms_to_bonds: atom_layout.GatherInfo
+```
+
+### LigandLigandBondInfo
+
+Information about ligand-ligand bonds.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class LigandLigandBondInfo:
+    tokens_to_ligand_ligand_bonds: atom_layout.GatherInfo
+```
+
+### PseudoBetaInfo
+
+Information for extracting pseudo-beta and equivalent atoms.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class PseudoBetaInfo:
+    token_atoms_to_pseudo_beta: atom_layout.GatherInfo
+```
+
+**Pseudo-beta atom selection:**
+- **Protein**: CB (or CA for glycine)
+- **Nucleic acids (purines A/G/DA/DG)**: C4
+- **Nucleic acids (pyrimidines C/T/U/DC/DT)**: C2
+- **Ligands**: First atom
+
+## Chains
+
+Chain identification dataclass.
+
+```python
+@dataclasses.dataclass(frozen=True)
+class Chains:
+    chain_id: np.ndarray
+    asym_id: np.ndarray
+    entity_id: np.ndarray
+    sym_id: np.ndarray
+```
+
+## Usage Example
+
+```python
+from alphafold3.model import features
+from alphafold3.model.atom_layout import atom_layout
+from alphafold3.constants import chemical_components
+
+# Define padding shapes
+padding_shapes = features.PaddingShapes(
+    num_tokens=512,
+    msa_size=1024,
+    num_chains=10,
+    num_templates=4,
+    num_atoms=128
+)
+
+# Tokenize input structure
+all_tokens, all_token_atoms, standard_idxs = features.tokenizer(
+    flat_output_layout=flat_layout,
+    ccd=chemical_components.CCD,
+    max_atoms_per_token=128,
+    flatten_non_standard_residues=True,
+    logging_name="7A4D"
+)
+
+# Compute MSA features
+msa_features = features.MSA.compute_features(
+    all_tokens=all_tokens,
+    standard_token_idxs=standard_idxs,
+    padding_shapes=padding_shapes,
+    fold_input=fold_input,
+    logging_name="7A4D",
+    max_paired_sequence_per_species=50
+)
+
+# Compute token features
+token_features = features.TokenFeatures.compute_features(
+    all_tokens=all_tokens,
+    padding_shapes=padding_shapes
+)
+
+# Create batch dictionary
+batch = {
+    **msa_features.as_data_dict(),
+    **token_features.as_data_dict(),
+}
+```
+
+## Related
+
+- [Inference](/api/model/inference) - Model inference and predictions
+- [Post-processing](/api/model/post-processing) - Output file generation

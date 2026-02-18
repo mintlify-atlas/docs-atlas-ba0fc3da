@@ -1,0 +1,168 @@
+---
+title: 'Input File Format'
+description: 'Overview of AlphaFold 3 input JSON format and specifications'
+icon: 'file-code'
+---
+
+## Overview
+
+AlphaFold 3 uses a custom JSON input format that provides extensive control over structure prediction. You can provide inputs in two ways:
+
+<CardGroup cols={2}>
+  <Card title="Single Input" icon="file">
+    Use `--json_path` flag with a single JSON file
+  </Card>
+  <Card title="Multiple Inputs" icon="folder">
+    Use `--input_dir` flag with a directory of JSON files
+  </Card>
+</CardGroup>
+
+## Key Capabilities
+
+The AlphaFold 3 JSON format allows you to:
+
+- Specify protein, RNA, and DNA chains with modified residues
+- Provide custom multiple sequence alignments (MSA) for proteins and RNA
+- Include custom structural templates for proteins
+- Define ligands using CCD codes, SMILES, or custom definitions
+- Specify covalent bonds between entities
+- Control predictions with multiple random seeds
+
+## Top-Level Structure
+
+Every AlphaFold 3 input JSON file follows this structure:
+
+```json
+{
+  "name": "Job name goes here",
+  "modelSeeds": [1, 2],
+  "sequences": [
+    {"protein": {...}},
+    {"rna": {...}},
+    {"dna": {...}},
+    {"ligand": {...}}
+  ],
+  "bondedAtomPairs": [...],
+  "userCCD": "...",
+  "dialect": "alphafold3",
+  "version": 4
+}
+```
+
+### Required Fields
+
+<ParamField path="name" type="string" required>
+  The name of the job. A sanitized version is used for output file naming.
+</ParamField>
+
+<ParamField path="modelSeeds" type="array<integer>" required>
+  List of integer random seeds. You must provide at least one seed. Each seed generates one predicted structure.
+</ParamField>
+
+<ParamField path="sequences" type="array" required>
+  List of molecular entities (proteins, RNA, DNA, ligands). See detailed specifications in the [JSON Specification](/guides/json-specification) guide.
+</ParamField>
+
+<ParamField path="dialect" type="string" required>
+  Must be set to `"alphafold3"`
+</ParamField>
+
+<ParamField path="version" type="integer" required>
+  Must be set to `1`, `2`, `3`, or `4`. Version 4 is the latest.
+</ParamField>
+
+### Optional Fields
+
+<ParamField path="bondedAtomPairs" type="array">
+  Specifies covalent bonds between entities. Used for covalent ligands and multi-CCD ligands like glycans.
+</ParamField>
+
+<ParamField path="userCCD" type="string">
+  User-provided chemical components dictionary in CCD mmCIF format (inline). Mutually exclusive with `userCCDPath`.
+</ParamField>
+
+<ParamField path="userCCDPath" type="string">
+  Path to file containing user-provided CCD. Mutually exclusive with `userCCD`.
+</ParamField>
+
+## Format Versions
+
+The input format has evolved across versions:
+
+<Steps>
+  <Step title="Version 1">
+    Initial AlphaFold 3 input format with basic entity definitions
+  </Step>
+  <Step title="Version 2">
+    Added `unpairedMsaPath`, `pairedMsaPath`, and `mmcifPath` fields for external MSA and templates
+  </Step>
+  <Step title="Version 3">
+    Added `userCCDPath` field for external user-provided CCD
+  </Step>
+  <Step title="Version 4">
+    Added `description` field for textual descriptions of chains and ligands
+  </Step>
+</Steps>
+
+## AlphaFold Server Compatibility
+
+<Note>
+The AlphaFold 3 codebase uses a different JSON format from [AlphaFold Server](https://alphafoldserver.com). However, `run_alphafold.py` includes an automatic converter that detects and translates AlphaFold Server JSON format.
+</Note>
+
+### Key Differences
+
+| Feature | AlphaFold Server | AlphaFold 3 |
+|---------|------------------|-------------|
+| Multiple inputs | List at top level | One input per file |
+| Ions | Separate entity type | Treated as ligands |
+| Entity IDs | Auto-assigned | User-specified (required) |
+| Glycans | Supported | Must convert manually |
+
+### Multiple Inputs
+
+The AlphaFold Server format allows multiple inputs in a single JSON (top-level list). The AlphaFold 3 format requires one input per file. The converter handles this automatically.
+
+### Random Seeds
+
+If AlphaFold Server JSON specifies `"modelSeeds": []`, the converter randomly chooses a seed. AlphaFold 3 format always requires explicit seeds.
+
+### Entity IDs
+
+AlphaFold Server doesn't require entity IDs. The converter auto-assigns IDs in "reverse spreadsheet style":
+
+```text
+A, B, ..., Z, AA, BA, CA, ..., ZA, AB, BB, CB, ..., ZB, ...
+```
+
+## Quick Example
+
+Here's a minimal valid input for a homodimer protein:
+
+```json fold_input.json
+{
+  "name": "2PV7",
+  "sequences": [
+    {
+      "protein": {
+        "id": ["A", "B"],
+        "sequence": "GMRESYANENQFGFKTINSDIHKIVIVGGYGKLGGLFARYLRASGYPISILDREDWAVAESILANADVVIVSVPINLTLETIERLKPYLTENMLLADLTSVKREPLAKMLEVHTGAVLGLHPMFGADIASMAKQVVVRCDGRFPERYEWLLEQIQIWGAKIYQTNATEHDHNMTYIQALRHFSTFANGLHLSKQPINLANLLALSSPIYRLELAMIGRLFAQDAELYADIIMDKSENLAVIETLKQTYDEALTFFENNDRQGFIDAFHKVRDWFGDYSEQFLKESRQLLQQANDLKQG"
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="JSON Specification" icon="brackets-curly" href="/guides/json-specification">
+    Detailed entity definitions and examples
+  </Card>
+  <Card title="Running Docker" icon="docker" href="/guides/running-docker">
+    Execute AlphaFold 3 with your input files
+  </Card>
+</CardGroup>

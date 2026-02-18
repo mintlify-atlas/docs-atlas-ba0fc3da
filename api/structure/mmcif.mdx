@@ -1,0 +1,563 @@
+---
+title: 'mmCIF Parsing'
+description: 'Utilities for parsing and manipulating mmCIF files'
+---
+
+## Overview
+
+The `mmcif` module provides low-level parsing operations and utilities for working with mmCIF (macromolecular Crystallographic Information File) format. It wraps C++ implementations for efficient parsing and provides Python-friendly interfaces.
+
+## Core Classes
+
+### Mmcif
+
+```python
+from alphafold3.structure import mmcif
+
+Mmcif = cif_dict.CifDict
+```
+
+The `Mmcif` class (alias for `CifDict`) represents a parsed mmCIF file as an immutable dictionary-like object. It provides efficient access to mmCIF data categories and items.
+
+**Dictionary Access:**
+
+```python
+# Access mmCIF data like a dictionary
+mmcif_obj = mmcif.from_string(mmcif_string)
+
+# Get atom site data
+atom_site_labels = mmcif_obj['_atom_site.label_atom_id']
+x_coords = mmcif_obj['_atom_site.Cartn_x']
+
+# Check if a field exists
+if '_atom_site.B_iso_or_equiv' in mmcif_obj:
+    b_factors = mmcif_obj['_atom_site.B_iso_or_equiv']
+
+# Iterate over keys
+for key in mmcif_obj.keys():
+    print(key)
+```
+
+## Parsing Functions
+
+### from_string
+
+```python
+def from_string(mmcif_string: str | bytes) -> Mmcif
+```
+
+Parses an mmCIF string into an Mmcif (CifDict) object.
+
+<ParamField path="mmcif_string" type="str | bytes" required>
+  The contents of an mmCIF file as a string or bytes
+</ParamField>
+
+**Returns:** Mmcif object containing parsed data
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+# Load from file
+with open('structure.cif', 'r') as f:
+    mmcif_string = f.read()
+
+# Parse
+mmcif_obj = mmcif.from_string(mmcif_string)
+
+# Access data
+structure_title = mmcif_obj.get('_struct.title', ['Unknown'])[0]
+print(f"Structure: {structure_title}")
+```
+
+### parse_multi_data_cif
+
+```python
+def parse_multi_data_cif(cif_string: str) -> dict[str, Mmcif]
+```
+
+Parses a CIF string containing multiple data blocks.
+
+<ParamField path="cif_string" type="str" required>
+  CIF string with multiple `data_` records
+</ParamField>
+
+**Returns:** Dictionary mapping record names to Mmcif objects
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+multi_cif = """
+data_001
+_foo bar
+#
+data_002
+_foo baz
+"""
+
+parsed = mmcif.parse_multi_data_cif(multi_cif)
+# Returns: {'001': Mmcif({'_foo': ['bar']}), '002': Mmcif({'_foo': ['baz']})}
+
+for name, mmcif_obj in parsed.items():
+    print(f"Data block {name}: {mmcif_obj['_foo']}")
+```
+
+## Chain and Entity Functions
+
+### get_chain_type_by_entity_id
+
+```python
+def get_chain_type_by_entity_id(mmcif: Mmcif) -> Mapping[str, str]
+```
+
+Returns a mapping from entity ID to its chain type.
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+**Returns:** Dictionary mapping entity IDs to chain types (e.g., 'polypeptide(L)', 'polyribonucleotide', 'water')
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+chain_types = mmcif.get_chain_type_by_entity_id(mmcif_obj)
+
+for entity_id, chain_type in chain_types.items():
+    print(f"Entity {entity_id}: {chain_type}")
+```
+
+### get_internal_to_author_chain_id_map
+
+```python
+def get_internal_to_author_chain_id_map(mmcif: Mmcif) -> Mapping[str, str]
+```
+
+Returns a mapping from internal chain IDs (`label_asym_id`) to author chain IDs (`auth_asym_id`).
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+**Returns:** Dictionary mapping internal to author chain IDs
+
+**Note:** This is not a bijection - multiple internal chain IDs can map to the same author chain ID.
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+chain_map = mmcif.get_internal_to_author_chain_id_map(mmcif_obj)
+
+for internal_id, author_id in chain_map.items():
+    print(f"Internal chain {internal_id} -> Author chain {author_id}")
+```
+
+## Bond Parsing
+
+### get_bond_atom_indices
+
+```python
+def get_bond_atom_indices(
+    mmcif: Mmcif,
+    model_id: str = '1'
+) -> tuple[Sequence[int], Sequence[int]]
+```
+
+Extracts atom indices that participate in chemical bonds from the `_struct_conn` table.
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+<ParamField path="model_id" type="str" default="'1'">
+  Model ID to extract bonds for (from `_atom_site.pdbx_PDB_model_num`)
+</ParamField>
+
+**Returns:** Tuple of `(from_atoms, to_atoms)` where each is a list of 0-based atom indices
+
+**Raises:**
+- `BondParsingError`: If required tables are missing or bonds reference non-existent atoms
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+try:
+    mmcif_obj = mmcif.from_string(mmcif_string)
+    from_atoms, to_atoms = mmcif.get_bond_atom_indices(mmcif_obj)
+    
+    print(f"Found {len(from_atoms)} bonds")
+    for i in range(min(5, len(from_atoms))):
+        print(f"Bond {i}: atom {from_atoms[i]} -> atom {to_atoms[i]}")
+except mmcif.BondParsingError as e:
+    print(f"Could not parse bonds: {e}")
+```
+
+### BondParsingError
+
+```python
+class BondParsingError(Exception):
+    """Exception raised when bond parsing fails"""
+```
+
+Raised when bond information cannot be extracted from an mmCIF file due to missing tables or invalid references.
+
+## Atom Data Functions
+
+### get_or_infer_type_symbol
+
+```python
+def get_or_infer_type_symbol(
+    mmcif: Mmcif,
+    ccd: chemical_components.Ccd | None = None
+) -> Sequence[str]
+```
+
+Returns element symbols for all atoms in the structure.
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+<ParamField path="ccd" type="Ccd | None" default="None">
+  Chemical Component Dictionary for inferring elements. If None, uses the cached CCD.
+</ParamField>
+
+**Returns:** Sequence of element symbols (e.g., ['C', 'N', 'O', 'S'])
+
+**Description:** Returns `_atom_site.type_symbol` if present. If not, infers elements from residue names and atom names using the Chemical Component Dictionary.
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+elements = mmcif.get_or_infer_type_symbol(mmcif_obj)
+
+print(f"First 10 elements: {elements[:10]}")
+```
+
+## Metadata Functions
+
+### get_experimental_method
+
+```python
+def get_experimental_method(mmcif: Mmcif) -> str | None
+```
+
+Extracts the experimental method used to determine the structure.
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+**Returns:** Comma-separated string of experimental methods (lowercase) or None if not present
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+method = mmcif.get_experimental_method(mmcif_obj)
+
+if method:
+    print(f"Experimental method: {method}")
+    # Example outputs: 
+    # "x-ray diffraction"
+    # "electron microscopy"
+    # "solution nmr"
+```
+
+### get_resolution
+
+```python
+def get_resolution(mmcif: Mmcif) -> float | None
+```
+
+Extracts the resolution of the structure in Angstroms.
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+**Returns:** Resolution in Angstroms or None if not available
+
+**Description:** Checks multiple possible fields in order:
+1. `_refine.ls_d_res_high` (X-ray refinement)
+2. `_em_3d_reconstruction.resolution` (EM reconstruction)
+3. `_reflns.d_resolution_high` (reflection data)
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+resolution = mmcif.get_resolution(mmcif_obj)
+
+if resolution:
+    print(f"Resolution: {resolution:.2f} Å")
+```
+
+### get_release_date
+
+```python
+def get_release_date(mmcif: Mmcif) -> str | None
+```
+
+Returns the oldest revision date from the structure's release history.
+
+<ParamField path="mmcif" type="Mmcif" required>
+  Parsed mmCIF object
+</ParamField>
+
+**Returns:** ISO-8601 formatted date string (YYYY-MM-DD) or None
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+release_date = mmcif.get_release_date(mmcif_obj)
+
+if release_date:
+    print(f"Released on: {release_date}")
+```
+
+## Chain ID Conversion Functions
+
+### int_id_to_str_id
+
+```python
+def int_id_to_str_id(num: int) -> str
+```
+
+Converts a positive integer to an mmCIF-style chain ID using reverse spreadsheet naming.
+
+<ParamField path="num" type="int" required>
+  Positive integer (1-based)
+</ParamField>
+
+**Returns:** String chain ID
+
+**Raises:** `ValueError` if `num <= 0`
+
+**Encoding scheme:**
+- 1 → 'A'
+- 2 → 'B'
+- 26 → 'Z'
+- 27 → 'AA'
+- 28 → 'BA'
+- 52 → 'ZZ'
+- 53 → 'AAA'
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+print(mmcif.int_id_to_str_id(1))   # 'A'
+print(mmcif.int_id_to_str_id(26))  # 'Z'
+print(mmcif.int_id_to_str_id(27))  # 'AA'
+print(mmcif.int_id_to_str_id(28))  # 'BA'
+```
+
+### str_id_to_int_id
+
+```python
+def str_id_to_int_id(str_id: str) -> int
+```
+
+Converts an mmCIF-style string chain ID to an integer (inverse of `int_id_to_str_id`).
+
+<ParamField path="str_id" type="str" required>
+  String chain ID consisting only of uppercase letters A-Z
+</ParamField>
+
+**Returns:** Integer (1-based)
+
+**Raises:** `ValueError` if `str_id` contains non-uppercase letters
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+print(mmcif.str_id_to_int_id('A'))   # 1
+print(mmcif.str_id_to_int_id('Z'))   # 26
+print(mmcif.str_id_to_int_id('AA'))  # 27
+print(mmcif.str_id_to_int_id('BA'))  # 28
+```
+
+## Bioassembly Functions
+
+### parse_oper_expr
+
+```python
+def parse_oper_expr(oper_expression: str) -> list[tuple[str, ...]]
+```
+
+Parses bioassembly operation expressions from mmCIF files.
+
+<ParamField path="oper_expression" type="str" required>
+  Operation expression string from `_pdbx_struct_assembly_gen.oper_expression`
+</ParamField>
+
+**Returns:** List of tuples, where each tuple contains transform IDs to apply for generating one copy
+
+**Expression syntax:**
+- `1,2,3` → Apply transforms 1, 2, or 3 separately (3 copies)
+- `(1-3)` → Same as above using range notation
+- `(1-3)(4-6)` → Cartesian product: apply all pairs (1,4), (1,5), (1,6), (2,4), (2,5), (2,6), (3,4), (3,5), (3,6) (9 copies)
+- `(P)` → Apply single transform with ID 'P'
+
+**Raises:** `ValueError` if the expression format is unsupported
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+
+# Simple list
+result = mmcif.parse_oper_expr('1,2,3')
+print(result)  # [('1',), ('2',), ('3',)]
+
+# Range notation
+result = mmcif.parse_oper_expr('(1-3)')
+print(result)  # [('1',), ('2',), ('3',)]
+
+# Cartesian product
+result = mmcif.parse_oper_expr('(1-2)(3-4)')
+print(result)  # [('1','3'), ('1','4'), ('2','3'), ('2','4')]
+
+# Letter ID
+result = mmcif.parse_oper_expr('(P)')
+print(result)  # [('P',)]
+```
+
+## Utility Functions
+
+### format_float_array
+
+```python
+def format_float_array(
+    values: np.ndarray,
+    num_decimal_places: int
+) -> Sequence[str]
+```
+
+Efficiently converts a 1D float array to formatted strings.
+
+<ParamField path="values" type="np.ndarray" required>
+  1D NumPy array of values to format (will be cast to float32)
+</ParamField>
+
+<ParamField path="num_decimal_places" type="int" required>
+  Number of decimal places to include (with trailing zeros)
+</ParamField>
+
+**Returns:** List of formatted strings
+
+**Raises:** `ValueError` if array is not 1-dimensional
+
+**Note:** This is optimized for performance and faster than Python list comprehensions.
+
+**Example:**
+
+```python
+from alphafold3.structure import mmcif
+import numpy as np
+
+coords = np.array([1.234567, 2.0, 3.999])
+
+# Format with 2 decimal places
+formatted = mmcif.format_float_array(coords, num_decimal_places=2)
+print(formatted)  # ['1.23', '2.00', '4.00']
+
+# Format with 3 decimal places
+formatted = mmcif.format_float_array(coords, num_decimal_places=3)
+print(formatted)  # ['1.235', '2.000', '3.999']
+```
+
+## Complete Example
+
+Here's a comprehensive example showing common mmCIF parsing operations:
+
+```python
+from alphafold3.structure import mmcif
+import numpy as np
+
+# Load and parse mmCIF file
+with open('structure.cif', 'r') as f:
+    mmcif_string = f.read()
+
+mmcif_obj = mmcif.from_string(mmcif_string)
+
+# Extract metadata
+resolution = mmcif.get_resolution(mmcif_obj)
+method = mmcif.get_experimental_method(mmcif_obj)
+release_date = mmcif.get_release_date(mmcif_obj)
+
+print(f"Structure Information:")
+print(f"  Resolution: {resolution:.2f} Å" if resolution else "  Resolution: N/A")
+print(f"  Method: {method}")
+print(f"  Released: {release_date}")
+
+# Get chain information
+chain_types = mmcif.get_chain_type_by_entity_id(mmcif_obj)
+chain_map = mmcif.get_internal_to_author_chain_id_map(mmcif_obj)
+
+print(f"\nChains:")
+for entity_id, chain_type in chain_types.items():
+    print(f"  Entity {entity_id}: {chain_type}")
+
+print(f"\nInternal to Author Chain Mapping:")
+for internal, author in chain_map.items():
+    print(f"  {internal} -> {author}")
+
+# Get atom data
+elements = mmcif.get_or_infer_type_symbol(mmcif_obj)
+print(f"\nTotal atoms: {len(elements)}")
+print(f"First 10 elements: {elements[:10]}")
+
+# Parse bonds (if available)
+try:
+    from_atoms, to_atoms = mmcif.get_bond_atom_indices(mmcif_obj)
+    print(f"\nBonds: {len(from_atoms)} bonds found")
+    for i in range(min(3, len(from_atoms))):
+        print(f"  Bond {i}: atom {from_atoms[i]} -> atom {to_atoms[i]}")
+except mmcif.BondParsingError:
+    print("\nBonds: No bond information available")
+
+# Access raw mmCIF data
+if '_atom_site.Cartn_x' in mmcif_obj:
+    x_coords = [float(x) for x in mmcif_obj['_atom_site.Cartn_x']]
+    y_coords = [float(y) for y in mmcif_obj['_atom_site.Cartn_y']]
+    z_coords = [float(z) for z in mmcif_obj['_atom_site.Cartn_z']]
+    
+    # Calculate structure center
+    center = np.array([
+        np.mean(x_coords),
+        np.mean(y_coords),
+        np.mean(z_coords)
+    ])
+    print(f"\nStructure center: ({center[0]:.2f}, {center[1]:.2f}, {center[2]:.2f})")
+```
+
+## See Also
+
+- [Structure Class](/api/structure/structure) - High-level Structure interface
+- [Parsing Functions](/api/structure/mmcif) - Structure construction from various formats

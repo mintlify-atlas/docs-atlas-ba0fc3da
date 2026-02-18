@@ -1,0 +1,492 @@
+---
+title: "MSA Processing"
+description: "Multiple sequence alignment tools and featurisation for evolutionary information extraction."
+---
+
+## Overview
+
+The MSA (Multiple Sequence Alignment) module provides tools for generating, processing, and featurising multiple sequence alignments. MSAs capture evolutionary information that AlphaFold 3 uses to predict protein structure.
+
+## Classes
+
+### Msa
+
+Container for multiple sequence alignments with manipulation methods.
+
+```python
+class Msa:
+    def __init__(
+        self,
+        query_sequence: str,
+        chain_poly_type: str,
+        sequences: Sequence[str],
+        descriptions: Sequence[str],
+        deduplicate: bool = True,
+    )
+```
+
+<ParamField path="query_sequence" type="str" required>
+  The sequence used to search for the MSA.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Polymer type of the query sequence (see `mmcif_names` for valid types: `PROTEIN_CHAIN`, `RNA_CHAIN`, `DNA_CHAIN`).
+</ParamField>
+
+<ParamField path="sequences" type="Sequence[str]" required>
+  MSA sequences from search tool. First sequence must match query in featurised form. Empty sequences default to query only.
+</ParamField>
+
+<ParamField path="descriptions" type="Sequence[str]" required>
+  Metadata for each MSA sequence. Must match length of sequences.
+</ParamField>
+
+<ParamField path="deduplicate" type="bool" default="True">
+  Whether to deduplicate MSA sequences in input order. Lowercase letters (insertions) are ignored during deduplication.
+</ParamField>
+
+**Properties:**
+
+<ResponseField name="depth" type="int">
+  Number of sequences in the MSA.
+</ResponseField>
+
+<ResponseField name="query_sequence" type="str">
+  The original query sequence.
+</ResponseField>
+
+<ResponseField name="chain_poly_type" type="str">
+  The polymer type of the sequences.
+</ResponseField>
+
+<ResponseField name="sequences" type="list[str]">
+  List of MSA sequences.
+</ResponseField>
+
+<ResponseField name="descriptions" type="list[str]">
+  List of sequence descriptions.
+</ResponseField>
+
+**Example:**
+
+```python
+from alphafold3.data import msa
+from alphafold3.constants import mmcif_names
+
+# Create MSA from sequences
+query_seq = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
+
+sequences = [
+    query_seq,
+    "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQD-LSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERAIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL",
+    "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLHSVYVDQWDWERVMGDGERQFSTLKSTVEAIWAGIKATEAAVSEEFGLAPFLPDQIHFVHSQELLSRYPDLDAKGRERaIAKDLGAVFLVGIGGKLSDGHRHDVRAPDYDDWSTPSELGHAGLNGDILVWNPVLEDAFELSSMGIRVDADTLKHQLALTGDEDRLELEWHQALLRGEMPQTIGGGIGQSRLTMLLLQLPHIGQVQAGVWPAAVRESVPSLL"
+]
+
+descriptions = [
+    "Original query",
+    "UniRef90_A0A123ABC1",
+    "UniRef90_B1B234DEF2"
+]
+
+msa_obj = msa.Msa(
+    query_sequence=query_seq,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+    sequences=sequences,
+    descriptions=descriptions,
+    deduplicate=True
+)
+
+print(f"MSA depth: {msa_obj.depth}")
+print(f"Polymer type: {msa_obj.chain_poly_type}")
+```
+
+#### Class Methods
+
+##### from_a3m
+
+Parse a single A3M format string and build an MSA object.
+
+```python
+@classmethod
+def from_a3m(
+    cls,
+    query_sequence: str,
+    chain_poly_type: str,
+    a3m: str,
+    max_depth: int | None = None,
+    deduplicate: bool = True,
+) -> Self
+```
+
+<ParamField path="query_sequence" type="str" required>
+  The query sequence used for MSA search.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Polymer type of the sequence.
+</ParamField>
+
+<ParamField path="a3m" type="str" required>
+  MSA in A3M format.
+</ParamField>
+
+<ParamField path="max_depth" type="int | None">
+  Maximum number of sequences to keep. If specified and positive, crops MSA to this depth.
+</ParamField>
+
+<ParamField path="deduplicate" type="bool" default="True">
+  Whether to deduplicate sequences.
+</ParamField>
+
+**Example:**
+
+```python
+a3m_string = """>query
+MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQ
+>hit1
+MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQD-LSGAEKAVQVKVKALPDAQ
+"""
+
+msa_obj = msa.Msa.from_a3m(
+    query_sequence="MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTL",
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+    a3m=a3m_string,
+    max_depth=5000
+)
+```
+
+##### from_multiple_a3ms
+
+Merge multiple A3M strings into a single MSA.
+
+```python
+@classmethod
+def from_multiple_a3ms(
+    cls,
+    a3ms: Sequence[str],
+    chain_poly_type: str,
+    deduplicate: bool = True,
+) -> Self
+```
+
+<ParamField path="a3ms" type="Sequence[str]" required>
+  Multiple A3M strings from different tools/databases. Query sequences must match across all A3Ms.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Polymer type of the sequences.
+</ParamField>
+
+<ParamField path="deduplicate" type="bool" default="True">
+  Whether to deduplicate merged sequences.
+</ParamField>
+
+**Example:**
+
+```python
+# Combine results from multiple databases
+uniref_a3m = "..."
+unclustered_a3m = "..."
+
+msa_obj = msa.Msa.from_multiple_a3ms(
+    a3ms=[uniref_a3m, unclustered_a3m],
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+    deduplicate=True
+)
+```
+
+##### from_multiple_msas
+
+Merge multiple MSA objects into one.
+
+```python
+@classmethod
+def from_multiple_msas(
+    cls,
+    msas: Sequence[Self],
+    deduplicate: bool = True
+) -> Self
+```
+
+<ParamField path="msas" type="Sequence[Msa]" required>
+  Multiple MSA objects. All must have matching query sequences and polymer types.
+</ParamField>
+
+<ParamField path="deduplicate" type="bool" default="True">
+  Whether to deduplicate merged sequences.
+</ParamField>
+
+##### from_empty
+
+Create an empty MSA containing only the query sequence.
+
+```python
+@classmethod
+def from_empty(cls, query_sequence: str, chain_poly_type: str) -> Self
+```
+
+**Example:**
+
+```python
+# Useful when MSA search returns no results
+empty_msa = msa.Msa.from_empty(
+    query_sequence="MKTAYIAKQRQISFVK",
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN
+)
+print(f"Empty MSA depth: {empty_msa.depth}")  # Output: 1
+```
+
+#### Instance Methods
+
+##### to_a3m
+
+Convert the MSA to A3M format string.
+
+```python
+def to_a3m(self) -> str
+```
+
+**Example:**
+
+```python
+a3m_output = msa_obj.to_a3m()
+with open("output.a3m", "w") as f:
+    f.write(a3m_output)
+```
+
+##### featurize
+
+Convert MSA to numerical features for model input.
+
+```python
+def featurize(self) -> MutableMapping[str, np.ndarray]
+```
+
+<ResponseField name="return" type="MutableMapping[str, np.ndarray]">
+  Dictionary with keys:
+  - `msa`: Encoded MSA sequences as integer array
+  - `deletion_matrix`: Deletion counts at each position
+  - `msa_species_identifiers`: Species IDs extracted from descriptions
+  - `num_alignments`: Total number of sequences
+</ResponseField>
+
+**Raises:**
+- `msa.Error`: If sequences have different lengths after removing deletions, contain unknown codes, or if MSA is empty after alignment
+
+**Example:**
+
+```python
+try:
+    features = msa_obj.featurize()
+    print(f"MSA shape: {features['msa'].shape}")
+    print(f"Deletion matrix shape: {features['deletion_matrix'].shape}")
+    print(f"Number of alignments: {features['num_alignments']}")
+except msa.Error as e:
+    print(f"Featurization failed: {e}")
+```
+
+---
+
+## Functions
+
+### get_msa
+
+Run MSA search tool and return MSA object.
+
+```python
+def get_msa(
+    target_sequence: str,
+    run_config: msa_config.RunConfig,
+    chain_poly_type: str,
+    deduplicate: bool = False,
+) -> Msa
+```
+
+<ParamField path="target_sequence" type="str" required>
+  The amino acid or nucleotide sequence to search.
+</ParamField>
+
+<ParamField path="run_config" type="msa_config.RunConfig" required>
+  MSA run configuration specifying tool and parameters.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Type of chain for MSA search (protein, RNA, DNA).
+</ParamField>
+
+<ParamField path="deduplicate" type="bool" default="False">
+  Whether to deduplicate sequences (insertions ignored).
+</ParamField>
+
+<ResponseField name="return" type="Msa">
+  MSA object containing aligned sequences.
+</ResponseField>
+
+**Example:**
+
+```python
+from alphafold3.data import msa_config
+
+# Configure Jackhmmer search
+config = msa_config.RunConfig(
+    config=msa_config.JackhmmerConfig(
+        binary_path="/usr/bin/jackhmmer",
+        database_config=msa_config.DatabaseConfig(path="/data/uniref90.fasta"),
+        n_cpu=8,
+        n_iter=1,
+        e_value=0.0001,
+        max_sequences=10000
+    ),
+    crop_size=5000
+)
+
+# Run search
+msa_result = msa.get_msa(
+    target_sequence="MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTL",
+    run_config=config,
+    chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+    deduplicate=True
+)
+
+print(f"Found {msa_result.depth} sequences")
+```
+
+### get_msa_tool
+
+Get an MSA search tool instance from configuration.
+
+```python
+def get_msa_tool(
+    msa_tool_config: msa_config.JackhmmerConfig | msa_config.NhmmerConfig,
+) -> msa_tool.MsaTool
+```
+
+<ParamField path="msa_tool_config" type="msa_config.JackhmmerConfig | msa_config.NhmmerConfig" required>
+  Configuration for Jackhmmer (protein) or Nhmmer (RNA/DNA) tool.
+</ParamField>
+
+<ResponseField name="return" type="msa_tool.MsaTool">
+  Configured MSA search tool instance.
+</ResponseField>
+
+**Example:**
+
+```python
+# Configure tool for protein search
+jackhmmer_config = msa_config.JackhmmerConfig(
+    binary_path="/usr/bin/jackhmmer",
+    database_config=msa_config.DatabaseConfig(path="/data/uniref90.fasta"),
+    n_cpu=8,
+    n_iter=1,
+    e_value=0.0001,
+    max_sequences=10000
+)
+
+tool = msa.get_msa_tool(jackhmmer_config)
+result = tool.query("MKTAYIAKQRQISFVK")
+print(result.a3m)
+```
+
+### sequences_are_feature_equivalent
+
+Check if two sequences produce identical features.
+
+```python
+def sequences_are_feature_equivalent(
+    sequence1: str,
+    sequence2: str,
+    chain_poly_type: str,
+) -> bool
+```
+
+<ParamField path="sequence1" type="str" required>
+  First sequence to compare.
+</ParamField>
+
+<ParamField path="sequence2" type="str" required>
+  Second sequence to compare.
+</ParamField>
+
+<ParamField path="chain_poly_type" type="str" required>
+  Polymer type for featurisation.
+</ParamField>
+
+<ResponseField name="return" type="bool">
+  True if sequences produce identical features, False otherwise.
+</ResponseField>
+
+**Example:**
+
+```python
+# Check if sequences are equivalent for modeling
+seq1 = "MKTAYIAKQRQISFVK"
+seq2 = "MKTAYIAKQRQISFVK"  # Identical
+seq3 = "MKTAYIAKQRQISFVX"  # Different (X vs K)
+
+print(msa.sequences_are_feature_equivalent(seq1, seq2, mmcif_names.PROTEIN_CHAIN))  # True
+print(msa.sequences_are_feature_equivalent(seq1, seq3, mmcif_names.PROTEIN_CHAIN))  # False
+```
+
+## MSA Search Tools
+
+### Jackhmmer (Protein)
+
+Iterative sequence search using HMM profiles. Best for protein sequences.
+
+**Configuration:**
+
+```python
+jackhmmer_config = msa_config.JackhmmerConfig(
+    binary_path="/usr/bin/jackhmmer",
+    database_config=msa_config.DatabaseConfig(path="/data/uniref90.fasta"),
+    n_cpu=8,              # Number of CPUs
+    n_iter=1,             # Number of iterations
+    e_value=0.0001,       # E-value threshold
+    z_value=None,         # Z-value for significance
+    max_sequences=10000   # Maximum sequences to return
+)
+```
+
+### Nhmmer (RNA/DNA)
+
+HMM-based search for nucleotide sequences. Used for RNA and DNA.
+
+**Configuration:**
+
+```python
+nhmmer_config = msa_config.NhmmerConfig(
+    binary_path="/usr/bin/nhmmer",
+    hmmalign_binary_path="/usr/bin/hmmalign",
+    hmmbuild_binary_path="/usr/bin/hmmbuild",
+    database_config=msa_config.DatabaseConfig(path="/data/rfam.fasta"),
+    n_cpu=8,
+    e_value=0.001,
+    max_sequences=5000,
+    alphabet="rna"  # or "dna"
+)
+```
+
+## Error Handling
+
+```python
+from alphafold3.data import msa
+
+try:
+    msa_obj = msa.Msa.from_a3m(
+        query_sequence=query_seq,
+        chain_poly_type=mmcif_names.PROTEIN_CHAIN,
+        a3m=a3m_string
+    )
+    features = msa_obj.featurize()
+except ValueError as e:
+    # Raised for invalid inputs (mismatched sequences, etc.)
+    print(f"Validation error: {e}")
+except msa.Error as e:
+    # Raised for MSA-specific errors (empty MSA, unknown residues, etc.)
+    print(f"MSA processing error: {e}")
+```
+
+## Related Modules
+
+- [Featurisation](/api/data/featurisation) - Overall input featurisation pipeline
+- [Template Processing](/api/data/templates) - Structural template features

@@ -1,0 +1,601 @@
+---
+title: 'Performance Optimization'
+description: 'Tips and techniques for optimizing AlphaFold 3 performance'
+icon: 'gauge'
+---
+
+## Overview
+
+AlphaFold 3 can be optimized for throughput and resource efficiency. Performance varies significantly based on:
+
+- **Hardware**: GPU model, CPU cores, RAM, disk speed
+- **Input size**: Number of tokens (residues/atoms)
+- **Configuration**: Pipeline stages, sharding, compilation
+
+## Running in Stages
+
+Split the pipeline into CPU-only data processing and GPU inference for optimal resource utilization.
+
+<Tabs>
+  <Tab title="Why Split?">
+    ### Benefits
+    
+    <CardGroup cols={2}>
+      <Card title="Cost Optimization" icon="dollar-sign">
+        Run genetic search on cheaper CPU instances, inference on expensive GPU instances
+      </Card>
+      <Card title="Reusability" icon="recycle">
+        Generate MSAs once, reuse for multiple inference runs with different seeds
+      </Card>
+      <Card title="Parallelization" icon="diagram-project">
+        Compute MSAs for individual chains, then combine for all chain pairs
+      </Card>
+      <Card title="Resource Matching" icon="gauge">
+        Use appropriate hardware for each stage
+      </Card>
+    </CardGroup>
+  </Tab>
+  
+  <Tab title="Stage 1: Data Pipeline">
+    Run genetic search and template finding (CPU-only):
+    
+    ```bash
+    python run_alphafold.py \
+        --json_path=input.json \
+        --db_dir=/path/to/databases \
+        --output_dir=/path/to/output \
+        --norun_inference
+    ```
+    
+    **Resources needed**:
+    - CPU: 4-16 cores
+    - RAM: 64+ GB
+    - Disk: Fast SSD recommended
+    - Time: Minutes to hours depending on sequence length
+    
+    **Output**: `<job>_data.json` with MSAs and templates
+  </Tab>
+  
+  <Tab title="Stage 2: Inference">
+    Run model inference (GPU required):
+    
+    ```bash
+    python run_alphafold.py \
+        --json_path=<job>_data.json \
+        --model_dir=/path/to/models \
+        --output_dir=/path/to/output \
+        --norun_data_pipeline
+    ```
+    
+    **Resources needed**:
+    - GPU: A100 80GB or H100 80GB
+    - RAM: 64+ GB
+    - Time: Minutes to hours depending on token count
+  </Tab>
+</Tabs>
+
+### Pre-computing MSAs for Multimers
+
+<Note>
+When folding multiple candidate chains with fixed chains, compute MSAs for fixed chains once.
+</Note>
+
+<Steps>
+  <Step title="Generate MSAs for Fixed Chains">
+    ```bash
+    # For each fixed chain
+    python run_alphafold.py \
+        --json_path=chain_A.json \
+        --db_dir=/path/to/databases \
+        --output_dir=/path/to/output \
+        --norun_inference
+    ```
+    
+    This creates `chain_A_data.json` with MSA and templates.
+  </Step>
+  
+  <Step title="Create Multimer Inputs">
+    Copy `unpairedMsa`, `pairedMsa`, and `templates` from pre-computed data JSONs into your multimer input:
+    
+    ```json
+    {
+      "sequences": [
+        {
+          "protein": {
+            "id": "A",
+            "sequence": "...",
+            "unpairedMsa": "<from chain_A_data.json>",
+            "pairedMsa": "<from chain_A_data.json>",
+            "templates": []
+          }
+        },
+        {
+          "protein": {
+            "id": "B",
+            "sequence": "..."
+            // Leave unset to compute dynamically
+          }
+        }
+      ]
+    }
+    ```
+  </Step>
+  
+  <Step title="Run Inference">
+    ```bash
+    python run_alphafold.py \
+        --json_path=multimer_input.json \
+        --model_dir=/path/to/models \
+        --output_dir=/path/to/output
+    ```
+  </Step>
+</Steps>
+
+### Combinatorial Optimization
+
+For all combinations of *n* first chains and *m* second chains:
+
+<Note>
+Instead of *n* × *m* full runs, do *n* + *m* data pipeline runs, then *n* × *m* inference-only runs.
+</Note>
+
+```bash
+# Generate MSAs for all chains individually
+for chain in chain_*.json; do
+    python run_alphafold.py \
+        --json_path=$chain \
+        --db_dir=/path/to/databases \
+        --output_dir=/path/to/msas \
+        --norun_inference
+done
+
+# Assemble dimers and run inference only
+for i in {1..n}; do
+    for j in {1..m}; do
+        # Create dimer JSON from pre-computed MSAs
+        python assemble_dimer.py chain_${i}_data.json chain_${j}_data.json > dimer_${i}_${j}.json
+        
+        # Run inference only
+        python run_alphafold.py \
+            --json_path=dimer_${i}_${j}.json \
+            --model_dir=/path/to/models \
+            --output_dir=/path/to/output_${i}_${j} \
+            --norun_data_pipeline
+    done
+done
+```
+
+## Data Pipeline Optimization
+
+### Disk Speed
+
+<Warning>
+Genetic search is I/O intensive. Disk speed significantly impacts performance.
+</Warning>
+
+**Recommendations**:
+- Use **local SSD** (not network-attached storage)
+- Consider **RAM-backed filesystem** for maximum speed
+- Avoid HDDs for databases
+
+```bash
+# Create RAM disk (example with 300GB)
+sudo mkdir /mnt/ramdisk
+sudo mount -t tmpfs -o size=300G tmpfs /mnt/ramdisk
+
+# Copy databases
+cp -r /path/to/databases/* /mnt/ramdisk/
+
+# Run AlphaFold
+python run_alphafold.py --db_dir=/mnt/ramdisk ...
+```
+
+### CPU Parallelization
+
+<Note>
+AlphaFold 3 runs genetic search against 4 protein databases in parallel.
+</Note>
+
+**Optimal CPU allocation**:
+```text
+Optimal cores = (cores per Jackhmmer) × 4 databases
+```
+
+For example:
+- 2 CPUs per Jackhmmer × 4 = 8 cores
+- 4 CPUs per Jackhmmer × 4 = 16 cores
+
+```bash
+python run_alphafold.py \
+    --jackhmmer_n_cpu=4 \
+    --nhmmer_n_cpu=4 \
+    ...
+```
+
+### Sharded Databases
+
+<Note>
+For multi-core systems with fast storage, shard databases to maximize parallelism.
+</Note>
+
+#### How Sharding Works
+
+<Steps>
+  <Step title="Split Database">
+    Split each database into *s* shards with equal distribution:
+    
+    ```bash
+    # Shuffle sequences randomly
+    seqkit shuffle --two-pass uniref90.fasta > uniref90_shuffled.fasta
+    
+    # Split into 16 shards
+    seqkit split2 --by-part 16 uniref90_shuffled.fasta
+    ```
+  </Step>
+  
+  <Step title="Rename Shards">
+    Use pattern `prefix-<index>-of-<total>` with 5-digit zero-padding:
+    
+    ```bash
+    # Example for 16 shards:
+    uniref90.fasta-00000-of-00016
+    uniref90.fasta-00001-of-00016
+    ...
+    uniref90.fasta-00015-of-00016
+    ```
+  </Step>
+  
+  <Step title="Reference with @">
+    File spec: `prefix@<total_shards>`
+    
+    ```bash
+    --uniref90_database_path="uniref90.fasta@16"
+    ```
+  </Step>
+</Steps>
+
+#### Sharding Example
+
+For a 64-core system with databases on RAM disk:
+
+```bash
+python run_alphafold.py \
+    --small_bfd_database_path="bfd-first_non_consensus_sequences.fasta@64" \
+    --small_bfd_z_value=65984053 \
+    --mgnify_database_path="mgy_clusters_2022_05.fa@512" \
+    --mgnify_z_value=623796864 \
+    --uniprot_cluster_annot_database_path="uniprot_cluster_annot_2021_04.fasta@256" \
+    --uniprot_cluster_annot_z_value=225619586 \
+    --uniref90_database_path="uniref90_2022_05.fasta@128" \
+    --uniref90_z_value=153742194 \
+    --ntrna_database_path="nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta@256" \
+    --ntrna_z_value=76752.808514 \
+    --rfam_database_path="rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta@16" \
+    --rfam_z_value=138.115553 \
+    --rna_central_database_path="rnacentral_active_seq_id_90_cov_80_linclust.fasta@64" \
+    --rna_central_z_value=13271.415730 \
+    --jackhmmer_n_cpu=2 \
+    --jackhmmer_max_parallel_shards=16 \
+    --nhmmer_n_cpu=2 \
+    --nhmmer_max_parallel_shards=16
+```
+
+**Resource utilization**:
+- Proteins: 2 CPUs × 16 shards × 4 databases = **128 cores**
+- RNA: 2 CPUs × 16 shards × 3 databases = **96 cores**
+
+<Warning>
+Aim for consistent shard sizes. If database A is 3× smaller than B and A has 16 shards, B should have 48 shards.
+</Warning>
+
+## Model Inference Optimization
+
+### Inference Timings
+
+**Single NVIDIA A100 80GB** (compile-free, in seconds):
+
+| Tokens | Time (seconds) |
+|--------|----------------|
+| 1,024 | 62 |
+| 2,048 | 275 |
+| 3,072 | 703 |
+| 4,096 | 1,434 |
+| 5,120 | 2,547 |
+
+**Single NVIDIA H100 80GB** (compile-free, in seconds):
+
+| Tokens | Time (seconds) | Speedup vs A100 |
+|--------|----------------|------------------|
+| 1,024 | 34 | 1.8× |
+| 2,048 | 144 | 1.9× |
+| 3,072 | 367 | 1.9× |
+| 4,096 | 774 | 1.9× |
+| 5,120 | 1,416 | 1.8× |
+
+<Note>
+This repository's single-GPU configuration is 2-5× more efficient than the 16-GPU configuration from the paper.
+</Note>
+
+### GPU Memory Management
+
+Default settings for A100/H100 80GB:
+
+```bash
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=true
+ENV XLA_CLIENT_MEM_FRACTION=0.95
+```
+
+#### Unified Memory (for larger inputs or smaller GPUs)
+
+<Tabs>
+  <Tab title="Enable Unified Memory">
+    For inputs &gt;5,120 tokens or GPUs with &lt;80GB:
+    
+    ```bash
+    ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+    ENV TF_FORCE_UNIFIED_MEMORY=true
+    ENV XLA_CLIENT_MEM_FRACTION=3.2
+    ```
+    
+    **Trade-off**: Prevents OOM by spilling to host memory, but slower due to host-device transfers.
+  </Tab>
+  
+  <Tab title="A100 40GB Config">
+    For A100 40GB (up to 4,352 tokens):
+    
+    1. Enable unified memory (above)
+    2. Adjust pair transition sharding in `model_config.py`:
+    
+    ```python
+    pair_transition_shard_spec: Sequence[_Shape2DType] = (
+        (2048, None),      # Up to 2048 tokens: no sharding
+        (3072, 1024),      # Up to 3072 tokens: 1024 chunk size
+        (None, 512),       # All others: 512 chunk size
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### Compilation Buckets
+
+<Note>
+AlphaFold 3 uses compilation buckets to avoid excessive recompilation for different input sizes.
+</Note>
+
+**Default buckets**: `256, 512, 768, 1024, 1280, 1536, 2048, 2560, 3072, 3584, 4096, 4608, 5120`
+
+**How it works**:
+1. Input featurized to smallest bucket that fits
+2. Padded to bucket size
+3. If bucket exists, use cached compilation
+4. If not, trigger new compilation
+
+**Trade-off**:
+- More buckets = more compilations, less padding
+- Fewer buckets = fewer compilations, more padding
+
+#### Custom Buckets
+
+For specific input sizes:
+
+```bash
+# If running inputs with sizes 5132, 5280, 5342
+python run_alphafold.py \
+    --buckets 256,512,768,1024,1280,1536,2048,2560,3072,3584,4096,4608,5120,5376 \
+    ...
+```
+
+This compiles once for 5376-token bucket, avoiding 3 separate compilations.
+
+### JAX Compilation Cache
+
+<Note>
+Persistent compilation cache avoids recompilation between runs.
+</Note>
+
+```bash
+python run_alphafold.py \
+    --jax_compilation_cache_dir=/path/to/cache \
+    ...
+```
+
+**For Google Cloud Storage**:
+
+```bash
+# Install etils (not in default Docker)
+pip install etils[gcs]
+
+# Use GCS path
+python run_alphafold.py \
+    --jax_compilation_cache_dir=gs://my-bucket/jax-cache \
+    ...
+```
+
+## Hardware-Specific Optimizations
+
+### CUDA Capability 7.x (V100, etc.)
+
+<Warning>
+Numeric issues with custom kernel fusion. Must disable:
+</Warning>
+
+```bash
+ENV XLA_FLAGS="--xla_disable_hlo_passes=custom-kernel-fusion-rewriter"
+```
+
+**V100 capabilities**:
+- With unified memory: Up to 1,280 tokens
+- Numerically accurate with workaround
+
+### NVIDIA P100
+
+- Up to 1,024 tokens
+- No special configuration needed
+- Numerically accurate
+
+### Required XLA Flags
+
+<Note>
+Workaround for XLA compilation time issue (set by default in Dockerfile):
+</Note>
+
+```bash
+ENV XLA_FLAGS="--xla_gpu_enable_triton_gemm=false"
+```
+
+For CUDA 7.x, combine both:
+
+```bash
+ENV XLA_FLAGS="--xla_gpu_enable_triton_gemm=false --xla_disable_hlo_passes=custom-kernel-fusion-rewriter"
+```
+
+## Performance Best Practices
+
+<Steps>
+  <Step title="Use Fast Storage">
+    - **SSD** for databases (minimum)
+    - **RAM disk** for maximum performance
+    - **Local** storage (not network-attached)
+  </Step>
+  
+  <Step title="Optimize CPU Usage">
+    - Match CPU count to parallel database searches
+    - Consider sharding for &gt;16 cores
+    - Use appropriate `jackhmmer_n_cpu` values
+  </Step>
+  
+  <Step title="Pre-compute When Possible">
+    - Run data pipeline once, reuse for multiple seeds
+    - Pre-compute MSAs for common chains
+    - Share MSAs across related predictions
+  </Step>
+  
+  <Step title="Right-size GPU">
+    - A100 80GB: Best for ≤5,120 tokens
+    - H100 80GB: 1.8-1.9× faster than A100
+    - A100 40GB: Use with unified memory + sharding
+  </Step>
+  
+  <Step title="Enable Caching">
+    - JAX compilation cache for repeated runs
+    - Reuse `_data.json` files
+    - Consider shared cache for multi-user setups
+  </Step>
+  
+  <Step title="Batch Strategically">
+    - Run data pipeline in parallel for multiple inputs
+    - Queue inference jobs on GPU
+    - Use array jobs on HPC systems
+  </Step>
+</Steps>
+
+## Monitoring Performance
+
+### GPU Utilization
+
+```bash
+# Monitor GPU in real-time
+watch -n 1 nvidia-smi
+
+# Log GPU metrics
+nvidia-smi --query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,memory.total --format=csv -l 1 > gpu_log.csv
+```
+
+### Profiling
+
+```python
+# Enable JAX profiling
+import jax
+jax.profiler.start_trace("/path/to/trace")
+# Run inference
+jax.profiler.stop_trace()
+
+# View in TensorBoard
+tensorboard --logdir=/path/to/trace
+```
+
+### Timing Breakdown
+
+<Note>
+AlphaFold 3 logs timing information. Check logs for:
+</Note>
+
+- **Data pipeline time**: Genetic search + template search
+- **Featurization time**: Converting input to model features
+- **Compilation time**: First run for each bucket size
+- **Inference time**: Model forward pass
+- **Post-processing time**: Generating outputs
+
+## Cost Optimization
+
+### Cloud Instance Selection
+
+**Google Cloud**:
+- **a2-ultragpu-1g**: 1× A100 80GB (recommended)
+- **a2-highgpu-1g**: 1× A100 40GB (smaller predictions)
+- **a3-highgpu-1g**: 1× H100 80GB (fastest)
+
+**AWS**:
+- **p4d.24xlarge**: 8× A100 40GB (use 1)
+- **p5.48xlarge**: 8× H100 80GB (use 1)
+
+**Azure**:
+- **Standard_ND96asr_v4**: A100 80GB
+- **Standard_ND96amsr_A100_v4**: A100 80GB
+
+### Cost-Saving Strategies
+
+<Steps>
+  <Step title="Spot/Preemptible Instances">
+    Use for data pipeline (can be interrupted and restarted)
+  </Step>
+  <Step title="Separate CPU and GPU">
+    Run data pipeline on cheap CPU instances, inference on expensive GPU instances
+  </Step>
+  <Step title="Batch Processing">
+    Maximize GPU utilization by queuing multiple jobs
+  </Step>
+  <Step title="Right-size Resources">
+    Don't over-provision RAM/CPUs. Start small and scale as needed.
+  </Step>
+</Steps>
+
+## Benchmark Your Setup
+
+Test with a standard input:
+
+```json benchmark.json
+{
+  "name": "benchmark",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKLLVVSGGSGS" // Repeat to target token count
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+```bash
+time python run_alphafold.py \
+    --json_path=benchmark.json \
+    --model_dir=/path/to/models \
+    --db_dir=/path/to/databases \
+    --output_dir=/path/to/output
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Setup" icon="database" href="/guides/database-setup">
+    Configure and optimize genetic databases
+  </Card>
+  <Card title="Output Format" icon="folder-open" href="/guides/output-format">
+    Understand prediction outputs
+  </Card>
+</CardGroup>

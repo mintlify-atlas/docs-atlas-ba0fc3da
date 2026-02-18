@@ -1,0 +1,490 @@
+---
+title: 'Running with Docker'
+description: 'How to run AlphaFold 3 using Docker containers'
+icon: 'docker'
+---
+
+## Prerequisites
+
+Before running AlphaFold 3 with Docker, ensure you have:
+
+<Steps>
+  <Step title="Linux System">
+    AlphaFold 3 requires Linux. Other operating systems are not supported.
+  </Step>
+  <Step title="NVIDIA GPU">
+    Compute Capability 8.0+ (A100, H100 recommended)
+    - A100 80GB: Up to 5,120 tokens
+    - H100 80GB: Up to 5,120 tokens
+    - A100 40GB: Up to 4,352 tokens (with config changes)
+  </Step>
+  <Step title="System Resources">
+    - **RAM**: Minimum 64 GB (genetic search can use more)
+    - **Disk**: Up to 1 TB for databases (SSD recommended)
+    - **CUDA**: Version 12.6 on host machine
+  </Step>
+  <Step title="Docker Installed">
+    Rootless Docker recommended. See installation section below.
+  </Step>
+</Steps>
+
+## Installation
+
+### Installing Docker
+
+<Note>
+These instructions are for Ubuntu 22.04 LTS. Adjust for your distribution.
+</Note>
+
+<Tabs>
+  <Tab title="Ubuntu 22.04">
+    Add Docker's official GPG key:
+    
+    ```bash
+    sudo apt-get update
+    sudo apt-get install ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    ```
+    
+    Add repository and install:
+    
+    ```bash
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    sudo apt-get update
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
+      docker-buildx-plugin docker-compose-plugin
+    
+    # Test installation
+    sudo docker run hello-world
+    ```
+  </Tab>
+  
+  <Tab title="Rootless Setup">
+    Enable rootless Docker for better security:
+    
+    ```bash
+    sudo apt-get install -y uidmap systemd-container
+    
+    sudo machinectl shell $(whoami)@ /bin/bash -c \
+      'dockerd-rootless-setuptool.sh install && \
+       sudo loginctl enable-linger $(whoami) && \
+       DOCKER_HOST=unix:///run/user/1001/docker.sock docker context use rootless'
+    ```
+  </Tab>
+</Tabs>
+
+### Installing NVIDIA GPU Support
+
+<Steps>
+  <Step title="Install NVIDIA Drivers">
+    ```bash
+    sudo apt-get -y install alsa-utils ubuntu-drivers-common
+    sudo ubuntu-drivers install
+    sudo nvidia-smi --gpu-reset
+    nvidia-smi  # Verify installation
+    ```
+    
+    <Warning>
+    If you see "NVIDIA-SMI has failed", reboot with `sudo reboot now`
+    </Warning>
+  </Step>
+  
+  <Step title="Install NVIDIA Container Toolkit">
+    ```bash
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+      sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+      sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+      sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    
+    sudo apt-get update
+    sudo apt-get install -y nvidia-container-toolkit
+    nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json
+    systemctl --user restart docker
+    sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place
+    ```
+  </Step>
+  
+  <Step title="Verify GPU Access">
+    ```bash
+    docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi
+    ```
+    
+    You should see your GPU listed.
+  </Step>
+</Steps>
+
+### Obtaining AlphaFold 3 Source Code
+
+```bash
+git clone https://github.com/google-deepmind/alphafold3.git
+cd alphafold3
+```
+
+### Downloading Databases
+
+<Warning>
+**Download size**: ~252 GB compressed, ~630 GB uncompressed. Use SSD for best performance.
+</Warning>
+
+```bash
+cd alphafold3
+./fetch_databases.sh /path/to/databases
+```
+
+<Note>
+Do NOT use a subdirectory of the AlphaFold 3 repository. This would slow Docker builds.
+</Note>
+
+Expected directory structure:
+
+```text
+/path/to/databases/
+├── mmcif_files/                  # ~200k PDB mmCIF files
+├── bfd-first_non_consensus_sequences.fasta
+├── mgy_clusters_2022_05.fa
+├── nt_rna_2023_02_23_clust_seq_id_90_cov_80_rep_seq.fasta
+├── pdb_seqres_2022_09_28.fasta
+├── rfam_14_9_clust_seq_id_90_cov_80_rep_seq.fasta
+├── rnacentral_active_seq_id_90_cov_80_linclust.fasta
+├── uniprot_all_2021_04.fa
+└── uniref90_2022_05.fa
+```
+
+### Obtaining Model Parameters
+
+<Note>
+Model parameters require approval. Complete [this form](https://forms.gle/svvpY4u2jsHEwWYS6). Expect 2-3 business day response.
+</Note>
+
+Download parameters to a directory (e.g., `$HOME/af3_models`).
+
+<Warning>
+Do NOT place in AlphaFold 3 repository directory. Store separately.
+</Warning>
+
+### Building Docker Image
+
+```bash
+cd alphafold3
+docker build -t alphafold3 -f docker/Dockerfile .
+```
+
+This creates an image with all Python dependencies and environment configuration.
+
+## Running AlphaFold 3
+
+### Basic Usage
+
+Create an input JSON file (see [Input Format](/guides/input-format)) and save to `$HOME/af_input/fold_input.json`:
+
+```json fold_input.json
+{
+  "name": "2PV7",
+  "sequences": [
+    {
+      "protein": {
+        "id": ["A", "B"],
+        "sequence": "GMRESYANENQFGFKTINSDIHKIVIVGGYGKLGGLFARYLRASGYPISILDREDWAVAESILANADVVIVSVPINLTLETIERLKPYLTENMLLADLTSVKREPLAKMLEVHTGAVLGLHPMFGADIASMAKQVVVRCDGRFPERYEWLLEQIQIWGAKIYQTNATEHDHNMTYIQALRHFSTFANGLHLSKQPINLANLLALSSPIYRLELAMIGRLFAQDAELYADIIMDKSENLAVIETLKQTYDEALTFFENNDRQGFIDAFHKVRDWFGDYSEQFLKESRQLLQQANDLKQG"
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+Run AlphaFold 3:
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume $HOME/af3_models:/root/models \
+    --volume /path/to/databases:/root/public_databases \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output
+```
+
+### Directory Mounts Explained
+
+<ParamField path="af_input" type="volume">
+  Input JSON files. Must be readable by container.
+</ParamField>
+
+<ParamField path="af_output" type="volume">
+  Output directory for predictions. Must be writable.
+</ParamField>
+
+<ParamField path="models" type="volume">
+  Model parameters from Google DeepMind.
+</ParamField>
+
+<ParamField path="public_databases" type="volume">
+  Genetic databases for MSA and template search.
+</ParamField>
+
+<Note>
+You may need to run `chmod 755 $HOME/af_input $HOME/af_output` to ensure proper permissions.
+</Note>
+
+### Multiple Database Directories
+
+For optimal performance with SSD + HDD setup:
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume $HOME/af3_models:/root/models \
+    --volume /mnt/ssd/databases:/root/public_databases \
+    --volume /mnt/hdd/databases:/root/public_databases_fallback \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --db_dir=/root/public_databases \
+    --db_dir=/root/public_databases_fallback \
+    --output_dir=/root/af_output
+```
+
+AlphaFold 3 checks SSD first, then falls back to slower storage.
+
+### Processing Multiple Inputs
+
+<Tabs>
+  <Tab title="Directory of JSONs">
+    ```bash
+    docker run -it \
+        --volume $HOME/af_input:/root/af_input \
+        --volume $HOME/af_output:/root/af_output \
+        --volume $HOME/af3_models:/root/models \
+        --volume /path/to/databases:/root/public_databases \
+        --gpus all \
+        alphafold3 \
+        python run_alphafold.py \
+        --input_dir=/root/af_input \
+        --model_dir=/root/models \
+        --output_dir=/root/af_output
+    ```
+    
+    Processes all `.json` files in the input directory.
+  </Tab>
+  
+  <Tab title="Batch Script">
+    ```bash
+    #!/bin/bash
+    
+    for json_file in $HOME/af_input/*.json; do
+        echo "Processing $json_file"
+        docker run -it \
+            --volume $HOME/af_input:/root/af_input \
+            --volume $HOME/af_output:/root/af_output \
+            --volume $HOME/af3_models:/root/models \
+            --volume /path/to/databases:/root/public_databases \
+            --gpus all \
+            alphafold3 \
+            python run_alphafold.py \
+            --json_path=/root/af_input/$(basename $json_file) \
+            --model_dir=/root/models \
+            --output_dir=/root/af_output
+    done
+    ```
+  </Tab>
+</Tabs>
+
+## Common Flags
+
+### Pipeline Control
+
+<ParamField path="--run_data_pipeline" type="boolean" default="true">
+  Run genetic and template search (CPU-only, time-consuming)
+</ParamField>
+
+<ParamField path="--run_inference" type="boolean" default="true">
+  Run model inference (requires GPU)
+</ParamField>
+
+<ParamField path="--norun_data_pipeline" type="flag">
+  Skip data pipeline (requires pre-computed MSA/templates in input)
+</ParamField>
+
+<ParamField path="--norun_inference" type="flag">
+  Skip inference (generates MSA/templates only)
+</ParamField>
+
+### Output Control
+
+<ParamField path="--output_dir" type="path" required>
+  Directory for output files
+</ParamField>
+
+<ParamField path="--force_output_dir" type="flag">
+  Overwrite existing output directory
+</ParamField>
+
+<ParamField path="--save_embeddings" type="boolean" default="false">
+  Save single and pair embeddings (~6 GB for 5k tokens)
+</ParamField>
+
+<ParamField path="--save_distogram" type="boolean" default="false">
+  Save distogram predictions (~3 GB for 5k tokens)
+</ParamField>
+
+### Performance Flags
+
+<ParamField path="--buckets" type="list">
+  Compilation bucket sizes (e.g., `256,512,1024,2048,5120`)
+</ParamField>
+
+<ParamField path="--jax_compilation_cache_dir" type="path">
+  Directory for JAX compilation cache (avoids recompilation)
+</ParamField>
+
+### Database Paths
+
+<ParamField path="--db_dir" type="path">
+  Database directory (can specify multiple times)
+</ParamField>
+
+## Running in Stages
+
+For optimal resource utilization, run data pipeline and inference separately:
+
+### Stage 1: Data Pipeline (CPU-only)
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume /path/to/databases:/root/public_databases \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --db_dir=/root/public_databases \
+    --output_dir=/root/af_output \
+    --norun_inference
+```
+
+This generates `<job>_data.json` with MSAs and templates.
+
+### Stage 2: Inference (GPU required)
+
+```bash
+docker run -it \
+    --volume $HOME/af_output:/root/af_output \
+    --volume $HOME/af3_models:/root/models \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_output/<job>_data.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output \
+    --norun_data_pipeline
+```
+
+<Note>
+This approach allows running genetic search on CPU-only machines, then inference on GPU machines.
+</Note>
+
+## Troubleshooting
+
+### Permission Errors
+
+```bash
+# Error: permission denied
+chmod 755 $HOME/af_input $HOME/af_output
+
+# Error: database permissions
+sudo chmod 755 --recursive /path/to/databases
+```
+
+### GPU Not Detected
+
+```bash
+# Verify host can see GPU
+nvidia-smi
+
+# Verify Docker can see GPU
+docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi
+
+# Check NVIDIA Container Toolkit
+systemctl --user status docker
+```
+
+### Out of Memory
+
+<Tabs>
+  <Tab title="Enable Unified Memory">
+    For inputs &gt;5,120 tokens or GPUs with &lt;80GB:
+    
+    Edit `docker/Dockerfile` and rebuild:
+    
+    ```dockerfile
+    ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+    ENV TF_FORCE_UNIFIED_MEMORY=true
+    ENV XLA_CLIENT_MEM_FRACTION=3.2
+    ```
+  </Tab>
+  
+  <Tab title="Reduce Batch Size">
+    For A100 40GB, edit model configuration:
+    
+    ```python
+    pair_transition_shard_spec: Sequence[_Shape2DType] = (
+        (2048, None),
+        (3072, 1024),
+        (None, 512),
+    )
+    ```
+  </Tab>
+</Tabs>
+
+### Compilation Issues
+
+For V100 or other Compute Capability 7.x GPUs:
+
+```dockerfile
+ENV XLA_FLAGS="--xla_disable_hlo_passes=custom-kernel-fusion-rewriter"
+```
+
+## Getting Help
+
+<CardGroup cols={2}>
+  <Card title="View All Flags" icon="flag">
+    ```bash
+    docker run alphafold3 python run_alphafold.py --help
+    ```
+  </Card>
+  <Card title="Check Logs" icon="file-lines">
+    Docker logs are displayed in real-time. Redirect to file:
+    ```bash
+    docker run ... alphafold3 python run_alphafold.py ... 2>&1 | tee log.txt
+    ```
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Singularity" icon="box" href="/guides/running-singularity">
+    Run AlphaFold 3 with Singularity instead
+  </Card>
+  <Card title="Performance" icon="gauge" href="/guides/performance-optimization">
+    Optimize for speed and throughput
+  </Card>
+</CardGroup>

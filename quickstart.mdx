@@ -1,80 +1,488 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start Guide
+description: Run your first AlphaFold 3 prediction with step-by-step examples
 ---
 
-## Get started in three steps
+# Quick Start Guide
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will help you run your first AlphaFold 3 predictions using various input types.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  Before starting, ensure you have completed the [installation](/installation) and have obtained model parameters.
 </Note>
+
+## Basic Workflow
+
+<Steps>
+  <Step title="Create input JSON">
+    Define your biomolecular structure prediction task
+  </Step>
+  <Step title="Run AlphaFold 3">
+    Execute the Docker container with your input
+  </Step>
+  <Step title="Analyze outputs">
+    Review predicted structures and confidence metrics
+  </Step>
+</Steps>
+
+## Example 1: Simple Protein Structure
+
+Let's start with a basic homodimer protein prediction.
+
+### Create Input File
+
+Create `$HOME/af_input/fold_input.json`:
+
+```json
+{
+  "name": "2PV7",
+  "sequences": [
+    {
+      "protein": {
+        "id": ["A", "B"],
+        "sequence": "GMRESYANENQFGFKTINSDIHKIVIVGGYGKLGGLFARYLRASGYPISILDREDWAVAESILANADVVIVSVPINLTLETIERLKPYLTENMLLADLTSVKREPLAKMLEVHTGAVLGLHPMFGADIASMAKQVVVRCDGRFPERYEWLLEQIQIWGAKIYQTNATEHDHNMTYIQALRHFSTFANGLHLSKQPINLANLLALSSPIYRLELAMIGRLFAQDAELYADIIMDKSENLAVIETLKQTYDEALTFFENNDRQGFIDAFHKVRDWFGDYSEQFLKESRQLLQQANDLKQG"
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+<Info>
+  The `"id": ["A", "B"]` specifies a homodimer with two copies of the same protein chain.
+</Info>
+
+### Run Prediction
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    --volume <DB_DIR>:/root/public_databases \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output
+```
+
+### Expected Output
+
+The prediction creates an output directory `$HOME/af_output/2PV7/` containing:
+
+- `2PV7_model.cif` - Top-ranked predicted structure
+- `2PV7_confidences.json` - Full confidence metrics
+- `2PV7_summary_confidences.json` - Summary confidence scores
+- `2PV7_data.json` - Input with MSA and template data
+- `ranking_scores.csv` - Scores for all predictions
+- `seed-1_sample-0/` through `seed-1_sample-4/` - Individual sample predictions
+
+## Example 2: Protein-Ligand Complex
+
+Predict a protein bound to an ATP molecule.
+
+<CodeGroup>
+```json Using CCD Code
+{
+  "name": "protein_atp_complex",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKVLWAALLVTFLAGCQAKVDQIAEGAVRKIEEELGAIAAAH"
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["ATP"]
+      }
+    }
+  ],
+  "modelSeeds": [1, 2, 3],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+```json Using SMILES
+{
+  "name": "protein_custom_ligand",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKVLWAALLVTFLAGCQAKVDQIAEGAVRKIEEELGAIAAAH"
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+      }
+    }
+  ],
+  "modelSeeds": [1, 2, 3],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+</CodeGroup>
+
+<Tip>
+  Using multiple `modelSeeds` generates multiple predictions with different random seeds, improving confidence in results.
+</Tip>
+
+## Example 3: RNA Structure with Modifications
+
+Predict an RNA structure with modified nucleotides.
+
+```json
+{
+  "name": "modified_rna",
+  "sequences": [
+    {
+      "rna": {
+        "id": "R",
+        "sequence": "AGCUAGCUAGCUAGCU",
+        "modifications": [
+          {"modificationType": "2MG", "basePosition": 1},
+          {"modificationType": "5MC", "basePosition": 4}
+        ]
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+## Example 4: Protein with Post-Translational Modifications
+
+```json
+{
+  "name": "modified_protein",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "PVLSCGEWQLVLHVWAKVEADVAGHGQDILIRLFK",
+        "modifications": [
+          {"ptmType": "HY3", "ptmPosition": 1},
+          {"ptmType": "P1L", "ptmPosition": 5}
+        ]
+      }
+    }
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+<Info>
+  Modifications are specified using CCD codes and 1-based residue positions. The first residue in the example won't be a proline (P) but HY3 instead.
+</Info>
+
+## Example 5: DNA-Protein Complex
+
+```json
+{
+  "name": "dna_protein_complex",
+  "sequences": [
+    {
+      "protein": {
+        "id": "P",
+        "sequence": "MTEKLTSAELGTRGVGLAKVAADGYVPDEAVRKAL"
+      }
+    },
+    {
+      "dna": {
+        "id": "D1",
+        "sequence": "GACCTCT"
+      }
+    },
+    {
+      "dna": {
+        "id": "D2",
+        "sequence": "AGAGGTC"
+      }
+    }
+  ],
+  "modelSeeds": [1, 2],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+## Example 6: Covalent Ligand with Bond Specification
+
+For covalent ligands, you can specify bonds between atoms.
+
+```json
+{
+  "name": "covalent_ligand",
+  "sequences": [
+    {
+      "protein": {
+        "id": "A",
+        "sequence": "MKTIIALSYIFCLVFADYKDDDDK"
+      }
+    },
+    {
+      "ligand": {
+        "id": "L",
+        "ccdCodes": ["HEM"]
+      }
+    }
+  ],
+  "bondedAtomPairs": [
+    [["A", 145, "SG"], ["L", 1, "FE"]]
+  ],
+  "modelSeeds": [1],
+  "dialect": "alphafold3",
+  "version": 1
+}
+```
+
+<Warning>
+  Bonds are specified as `[[entity_id, residue_position, atom_name], [entity_id, residue_position, atom_name]]`. Atom names must match CCD definitions.
+</Warning>
+
+## Running Pipeline in Stages
+
+You can split the pipeline into stages to optimize resource usage.
+
+### Stage 1: Data Pipeline Only (CPU)
+
+Generate MSAs and templates without running inference:
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <DB_DIR>:/root/public_databases \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_input/fold_input.json \
+    --output_dir=/root/af_output \
+    --norun_inference
+```
+
+<Tip>
+  This stage is CPU-only and doesn't require a GPU. Run it on a cheaper CPU-only instance to save costs.
+</Tip>
+
+### Stage 2: Inference Only (GPU)
+
+Run inference using pre-computed MSAs and templates:
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --json_path=/root/af_output/job_name/job_name_data.json \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output \
+    --norun_data_pipeline
+```
+
+## Processing Multiple Inputs
+
+Process a directory of JSON files:
+
+```bash
+docker run -it \
+    --volume $HOME/af_input:/root/af_input \
+    --volume $HOME/af_output:/root/af_output \
+    --volume <MODEL_PARAMETERS_DIR>:/root/models \
+    --volume <DB_DIR>:/root/public_databases \
+    --gpus all \
+    alphafold3 \
+    python run_alphafold.py \
+    --input_dir=/root/af_input \
+    --model_dir=/root/models \
+    --output_dir=/root/af_output
+```
+
+## Understanding Output Files
+
+### Structure File (`.cif`)
+
+The mmCIF file contains the predicted 3D coordinates:
+
+- Compatible with PyMOL, ChimeraX, and other structural biology tools
+- Contains all atoms for all chains
+- Includes B-factor values corresponding to pLDDT confidence
+
+### Confidence Metrics
+
+<CodeGroup>
+```json Summary Confidences
+{
+  "ptm": 0.87,              // Predicted TM-score (0-1, higher is better)
+  "iptm": 0.82,             // Interface TM-score (0-1)
+  "ranking_score": 0.91,    // Overall ranking score
+  "has_clash": false,       // Significant clashes detected?
+  "fraction_disordered": 0.05
+}
+```
+
+```json Per-Chain Metrics
+{
+  "chain_ptm": [0.89, 0.85],           // pTM per chain
+  "chain_iptm": [0.78, 0.80],          // Interface confidence per chain
+  "chain_pair_pae_min": [[0, 3.2], [3.5, 0]]  // Minimum PAE between chains
+}
+```
+</CodeGroup>
+
+### Interpreting Confidence Scores
+
+<CardGroup cols={2}>
+  <Card title="pLDDT (per-atom)" icon="atom">
+    **90-100**: Very high confidence
+    **70-90**: Confident
+    **50-70**: Low confidence
+    **&lt;50**: Very low confidence
+  </Card>
+  <Card title="pTM / ipTM" icon="chart-line">
+    **&gt;0.8**: High quality prediction
+    **0.6-0.8**: Gray zone (may or may not be correct)
+    **&lt;0.6**: Failed prediction
+    **&gt;0.5**: Overall fold might be similar to true structure
+  </Card>
+  <Card title="PAE (Predicted Aligned Error)" icon="ruler">
+    **Low values (0-5 Å)**: High confidence in relative positions
+    **High values (&gt;10 Å)**: Low confidence in relative positions
+    Useful for identifying domains and interfaces
+  </Card>
+  <Card title="Ranking Score" icon="ranking-star">
+    **Range**: -100 to 1.5
+    **Formula**: 0.8×ipTM + 0.2×pTM + 0.5×disorder - 100×clash
+    Use to rank predictions across multiple seeds
+  </Card>
+</CardGroup>
+
+## Advanced Options
+
+### Custom MSA and Templates
+
+Provide your own MSA (in A3M format):
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MKTAYIAKQRQ",
+    "unpairedMsa": ">query\nMKTAYIAKQRQ\n>seq1\nMKT-YIAKQRQ\n>seq2\nMKTAYI-KQRQ\n",
+    "pairedMsa": "",
+    "templates": []
+  }
+}
+```
+
+### Running MSA-Free
+
+Predict structure without MSA search:
+
+```json
+{
+  "protein": {
+    "id": "A",
+    "sequence": "MKTAYIAKQRQ",
+    "unpairedMsa": "",
+    "pairedMsa": "",
+    "templates": []
+  }
+}
+```
+
+### Multiple Seeds for Better Sampling
+
+```json
+{
+  "name": "my_prediction",
+  "modelSeeds": [1, 2, 3, 4, 5],
+  "sequences": [...]
+}
+```
+
+<Tip>
+  By default, AlphaFold 3 generates 5 samples per seed. With 5 seeds, you'll get 25 total predictions to choose from.
+</Tip>
+
+## Performance Tips
+
+<CardGroup cols={2}>
+  <Card title="Use SSD for Databases" icon="database">
+    Place genetic databases on SSD or RAM-backed filesystem for 5-10x faster MSA search
+  </Card>
+  <Card title="Reuse MSA Data" icon="recycle">
+    For multiple predictions with the same chains, run data pipeline once and reuse the output JSON
+  </Card>
+  <Card title="Enable JAX Compilation Cache" icon="memory">
+    Use `--jax_compilation_cache_dir` to avoid recompiling between runs
+  </Card>
+  <Card title="Optimize Bucket Sizes" icon="bucket">
+    Adjust `--buckets` flag to minimize recompilation for your typical input sizes
+  </Card>
+</CardGroup>
+
+## Common Issues
+
+### Out of Memory
+
+```bash
+# Enable unified memory in Dockerfile
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+ENV TF_FORCE_UNIFIED_MEMORY=true
+ENV XLA_CLIENT_MEM_FRACTION=3.2
+```
+
+### RDKit Conformer Generation Failed
+
+If you see "Failed to construct RDKit reference structure":
+
+1. Try increasing iterations: `--conformer_max_iterations=10000`
+2. Or provide a reference structure using user-provided CCD format
+
+### Invalid JSON
+
+Ensure SMILES strings are properly escaped:
+
+```bash
+# Use jq to escape SMILES
+jq -R . <<< 'CCC[C@@H](O)CC\C=C\C=C\C#CC#C\C=C\CO'
+```
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Input Documentation" icon="book" href="https://github.com/google-deepmind/alphafold3/blob/main/docs/input.md">
+    Complete JSON format specification
+  </Card>
+  <Card title="Output Documentation" icon="file-export" href="https://github.com/google-deepmind/alphafold3/blob/main/docs/output.md">
+    Detailed output format guide
+  </Card>
+  <Card title="Performance Tuning" icon="gauge-high" href="https://github.com/google-deepmind/alphafold3/blob/main/docs/performance.md">
+    Optimize for speed and throughput
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+If you encounter issues:
+
+1. Check [Known Issues](https://github.com/google-deepmind/alphafold3/blob/main/docs/known_issues.md)
+2. Search [GitHub Issues](https://github.com/google-deepmind/alphafold3/issues)
+3. Contact the team at [alphafold@google.com](mailto:alphafold@google.com)
